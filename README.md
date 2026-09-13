@@ -137,7 +137,7 @@ menus from text or bypass the sampler's own logic.
 
 SHA-256:
 
-- macOS: `6a1d67b5a2ec5619a1c925fd6b7fcd543be0a724d8fb10bde08f4d60b3e629b8`
+- macOS: `02e51aa61d78b080f9d56d6bf952a881bf0ff72bfe7fdc977b99dc8c97e29996`
 - Windows: `16729b7f17a2051bd92fa7e2af153fde7340522f507e40ecab038741a2710f0e`
 
 The macOS plug-ins support Intel Macs with macOS 10.13 High Sierra or newer

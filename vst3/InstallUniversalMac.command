@@ -51,11 +51,9 @@ prepare_bundle() {
   if [ "$darwin_major" -ge 20 ]; then
     /usr/bin/codesign --force --deep --sign - "$stage"
   fi
-  local binary="$stage/Contents/MacOS/Ensoniq EPS-16 Plus"
-  local archs
-  archs="$(/usr/bin/lipo -archs "$binary")"
-  case " $archs " in *" arm64 "*) ;; *) fail "$stage has no arm64 slice." ;; esac
-  case " $archs " in *" x86_64 "*) ;; *) fail "$stage has no x86_64 slice." ;; esac
+  # Both architecture slices are verified while creating the release package.
+  # Do not run lipo here: on older macOS versions it requires the optional
+  # Xcode Command Line Tools, which end users should not need for installation.
   /usr/bin/codesign --verify --deep --strict --verbose=2 \
     --arch "$(/usr/bin/uname -m)" "$stage"
 }
