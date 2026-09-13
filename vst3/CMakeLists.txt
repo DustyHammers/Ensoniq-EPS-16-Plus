@@ -221,7 +221,7 @@ endif()
 if(WIN32)
   add_custom_target(eps16_vst3_package
     COMMAND "${CMAKE_COMMAND}"
-            "-DSOURCE_BUNDLE=$<TARGET_BUNDLE_DIR:Eps16Plus_VST3>"
+            "-DSOURCE_BUNDLE=$<TARGET_GENEX_EVAL:Eps16Plus_VST3,$<TARGET_PROPERTY:Eps16Plus_VST3,JUCE_PLUGIN_ARTEFACT_FILE>>"
             "-DPACKAGE_DIR=${CMAKE_BINARY_DIR}/vst3-package"
             "-DARCHIVE_NAME=Ensoniq-EPS-16-Plus-${PROJECT_VERSION}-Windows-x64.zip"
             "-DRESOURCE_README=${CMAKE_CURRENT_SOURCE_DIR}/WindowsResourceFolder-README.txt"
