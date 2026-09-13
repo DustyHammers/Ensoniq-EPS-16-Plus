@@ -9,8 +9,14 @@
 
 #if defined(_MSC_VER)
 #define EPS16_THREAD_LOCAL __declspec(thread)
+#define eps16_fseeko _fseeki64
+#define eps16_ftello _ftelli64
+typedef __int64 Eps16FileOffset;
 #else
 #define EPS16_THREAD_LOCAL _Thread_local
+#define eps16_fseeko fseeko
+#define eps16_ftello ftello
+typedef off_t Eps16FileOffset;
 #endif
 
 #include "es5505_core.h"
@@ -2401,12 +2407,12 @@ static void scsi_trace(const char *operation, unsigned int reg,
 static int scsi_mount_image(const char *path) {
     FILE *image = path && *path ? fopen(path, "rb") : NULL;
     if (!image) return 0;
-    if (fseeko(image, 0, SEEK_END) || ftello(image) <= 0) {
+    if (eps16_fseeko(image, 0, SEEK_END) || eps16_ftello(image) <= 0) {
         fclose(image);
         return 0;
     }
-    const off_t size = ftello(image);
-    if ((size & 511) != 0 || fseeko(image, 0, SEEK_SET)) {
+    const Eps16FileOffset size = eps16_ftello(image);
+    if ((size & 511) != 0 || eps16_fseeko(image, 0, SEEK_SET)) {
         fclose(image);
         return 0;
     }
@@ -2485,7 +2491,7 @@ static void scsi_command(uint8_t command) {
         const uint64_t bytes = (uint64_t)blocks * 512;
         if (bytes && offset <= scsi_image_size &&
             bytes <= scsi_image_size - offset &&
-            !fseeko(scsi_image, (off_t)offset, SEEK_SET)) {
+            !eps16_fseeko(scsi_image, (Eps16FileOffset)offset, SEEK_SET)) {
             scsi_stream_remaining = bytes;
             /* The SP-2 programs HD63450 channel 1 for data length + 1.  The
                WD33C93 drops DREQ after the data phase with one DMA transfer
