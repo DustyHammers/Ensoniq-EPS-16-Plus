@@ -7,6 +7,12 @@
 #include <string.h>
 #include <time.h>
 
+#if defined(_MSC_VER)
+#define EPS16_THREAD_LOCAL __declspec(thread)
+#else
+#define EPS16_THREAD_LOCAL _Thread_local
+#endif
+
 #include "es5505_core.h"
 #include "es5510_core.h"
 #include "hfe_disk.h"
@@ -263,7 +269,7 @@ typedef struct {
 } RomProbeState;
 
 #ifdef EPS16_ROM_PROBE_CONTEXT
-static _Thread_local RomProbeState *rom_probe_state;
+static EPS16_THREAD_LOCAL RomProbeState *rom_probe_state;
 #else
 static RomProbeState rom_probe_default_state;
 static RomProbeState *rom_probe_state = &rom_probe_default_state;
@@ -515,7 +521,11 @@ static uint64_t bus_cycle_now(void);
 
 static uint64_t monotonic_time_ns(void) {
     struct timespec value;
+#if defined(_WIN32)
+    timespec_get(&value, TIME_UTC);
+#else
     clock_gettime(CLOCK_MONOTONIC, &value);
+#endif
     return (uint64_t)value.tv_sec * 1000000000ULL + (uint64_t)value.tv_nsec;
 }
 

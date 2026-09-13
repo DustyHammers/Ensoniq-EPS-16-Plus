@@ -59,7 +59,7 @@ struct Eps16ProbeMachine {
     m68ki_cpu_core cpu;
 };
 
-static _Thread_local Eps16ProbeMachine *plugin_current_machine;
+static EPS16_THREAD_LOCAL Eps16ProbeMachine *plugin_current_machine;
 
 #define plugin_initialized (plugin_current_machine->plugin.initialized)
 #define plugin_executed (plugin_current_machine->plugin.executed)

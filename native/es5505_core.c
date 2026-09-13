@@ -235,17 +235,23 @@ void es5505_core_render_buses(Es5505Core *core,
 
 void es5505_core_render(Es5505Core *core, int32_t *left, int32_t *right,
                         size_t frames) {
-    int32_t buses[ES5505_STEREO_BUSES * 2][frames];
+    enum { RENDER_CHUNK_FRAMES = 256 };
+    int32_t buses[ES5505_STEREO_BUSES * 2][RENDER_CHUNK_FRAMES];
     int32_t *outputs[ES5505_STEREO_BUSES * 2];
     for (unsigned int output = 0; output < ES5505_STEREO_BUSES * 2; ++output)
         outputs[output] = buses[output];
-    es5505_core_render_buses(core, outputs, frames);
-    for (size_t frame = 0; frame < frames; ++frame) {
-        left[frame] = 0;
-        right[frame] = 0;
-        for (unsigned int bus = 0; bus < ES5505_STEREO_BUSES; ++bus) {
-            left[frame] += buses[bus * 2][frame];
-            right[frame] += buses[bus * 2 + 1][frame];
+    for (size_t offset = 0; offset < frames;) {
+        const size_t chunk = frames - offset < RENDER_CHUNK_FRAMES
+                                 ? frames - offset : RENDER_CHUNK_FRAMES;
+        es5505_core_render_buses(core, outputs, chunk);
+        for (size_t frame = 0; frame < chunk; ++frame) {
+            left[offset + frame] = 0;
+            right[offset + frame] = 0;
+            for (unsigned int bus = 0; bus < ES5505_STEREO_BUSES; ++bus) {
+                left[offset + frame] += buses[bus * 2][frame];
+                right[offset + frame] += buses[bus * 2 + 1][frame];
+            }
         }
+        offset += chunk;
     }
 }
