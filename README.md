@@ -1,7 +1,7 @@
 # Ensoniq EPS-16 Plus Audio Unit and VST3 Emulator
 
-Hardware-level emulation of the Ensoniq EPS-16 Plus sampler for Intel and
-Apple Silicon Macs, built as a resizable Audio Unit and VST3 instrument.
+Hardware-level emulation of the Ensoniq EPS-16 Plus sampler for macOS and
+Windows, built as a resizable Audio Unit and VST3 instrument.
 
 This project builds on and references open-source work by Karl Stenerud,
 Aaron Giles, Christian Brunschen, MAMEdev, Raw Material Software and their
@@ -10,6 +10,12 @@ and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for provenance and
 licence details.
 
 ![EPS-16 Plus VST3 panel and keyboard](docs/images/eps16-plus-vst3-panel-keyboard.png)
+
+## 1.0.10
+
+- Added a native 64-bit Windows VST3 build and cloud build workflow.
+- Added compatibility with older EFE exchange files whose header begins with
+  uppercase `EPS File:` instead of the newer `Eps File:` spelling.
 
 ## 1.0.9
 
@@ -125,13 +131,13 @@ menus from text or bypass the sampler's own logic.
 
 ## Download
 
-### [Download Ensoniq EPS-16 Plus 1.0.9 — macOS Universal AU + VST3](https://github.com/mardlib/Ensoniq-EPS-16-Plus/releases/download/v1.0.9/Ensoniq-EPS-16-Plus-1.0.9-macOS-universal.zip)
+### [Download Ensoniq EPS-16 Plus 1.0.10 — macOS Universal AU + VST3](https://github.com/mardlib/Ensoniq-EPS-16-Plus/releases/download/v1.0.10/Ensoniq-EPS-16-Plus-1.0.10-macOS-universal.zip)
 
-SHA-256:
-`6be6cf64fe3abe4429240315c52732dc7ca15767521e249d04bfabd744de63bd`
+### [Download Ensoniq EPS-16 Plus 1.0.10 — Windows x64 VST3](https://github.com/mardlib/Ensoniq-EPS-16-Plus/releases/download/v1.0.10/Ensoniq-EPS-16-Plus-1.0.10-Windows-x64.zip)
 
-Both plug-in formats support Intel Macs with macOS 10.13 High Sierra or newer
-and Apple Silicon Macs with macOS 11 or newer.
+The macOS plug-ins support Intel Macs with macOS 10.13 High Sierra or newer
+and Apple Silicon Macs with macOS 11 or newer. The Windows VST3 supports
+64-bit Windows 10 and Windows 11 hosts.
 
 > **Original Ensoniq files are required.** ROM, KPC firmware and operating
 > system disk images are copyrighted and are not included in this repository
@@ -407,3 +413,18 @@ ctest --test-dir work/vst3-build-high-sierra --output-on-failure
 
 The universal package target verifies both architectures and their deployment
 targets, signs both bundles and creates one AU + VST3 archive.
+
+### Windows VST3
+
+No local Windows computer is required. The `Windows VST3` GitHub Actions
+workflow builds a native 64-bit VST3 with Visual Studio 2022 and uploads a ZIP
+artifact. Run it manually from the repository's Actions page, or create a
+version tag such as `v1.0.10` to run it automatically.
+
+The resulting archive contains the VST3 bundle, an adjacent `EPS_files`
+resource folder, license notices and Windows installation instructions. Copy
+the bundle and `EPS_files` to:
+
+```text
+C:\Program Files\Common Files\VST3\
+```

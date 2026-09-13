@@ -233,6 +233,22 @@ int main(int argc, char **argv) {
         return 1;
     }
 
+    /* Older EFE exporters capitalize EPS in the exchange-file signature. */
+    memcpy(efe, "\r\nEPS File:", 11);
+    efe_file = fopen(path, "wb");
+    const int legacy_efe_write_ok = efe_file &&
+        fwrite(efe, 1, sizeof(efe), efe_file) == sizeof(efe);
+    const int legacy_efe_close_ok = efe_file && fclose(efe_file) == 0;
+    if (!legacy_efe_write_ok || !legacy_efe_close_ok ||
+        !eps16_disk_load(path, decoded, sizeof(decoded), &format,
+                         error, sizeof(error)) ||
+        format != EPS16_DISK_EFE) {
+        remove(path);
+        fprintf(stderr, "legacy uppercase EFE import failed: %s\n", error);
+        return 1;
+    }
+    remove(path);
+
     if (argc == 2) {
         if (!eps16_disk_load(argv[1], decoded, sizeof(decoded), &format,
                              error, sizeof(error)) ||

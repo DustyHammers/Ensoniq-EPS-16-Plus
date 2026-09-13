@@ -4,7 +4,11 @@
 #include <juce_cryptography/juce_cryptography.h>
 
 #include <algorithm>
+#if JUCE_WINDOWS
+#include <windows.h>
+#else
 #include <dlfcn.h>
+#endif
 
 namespace {
 constexpr std::uint32_t vstStateMagic = 0x45505356U; // EPSV
@@ -13,11 +17,25 @@ constexpr std::uint32_t vstStateVersion = 1;
 void modulePathAnchor() {}
 
 juce::File moduleFile() {
+#if JUCE_WINDOWS
+    HMODULE module = nullptr;
+    if (!GetModuleHandleExW(
+            GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS |
+                GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT,
+            reinterpret_cast<LPCWSTR>(&modulePathAnchor), &module))
+        return {};
+    std::wstring path(32768, L'\0');
+    const auto length = GetModuleFileNameW(
+        module, path.data(), static_cast<DWORD>(path.size()));
+    if (!length || length == path.size()) return {};
+    return juce::File(juce::String(path.data(), length));
+#else
     Dl_info information{};
     if (dladdr(reinterpret_cast<const void *>(&modulePathAnchor), &information) &&
         information.dli_fname)
         return juce::File(juce::String::fromUTF8(information.dli_fname));
     return {};
+#endif
 }
 
 juce::File firstExisting(const juce::File &directory,
@@ -347,9 +365,15 @@ void Eps16PlusProcessor::refreshResourcePaths() {
             directories.add(directory);
     };
     addDirectory(defaultResourceDirectory());
+#if JUCE_MAC
     addDirectory(juce::File::getSpecialLocation(juce::File::userHomeDirectory)
                      .getChildFile("Library/Audio/Plug-Ins/VST3/EPS_files"));
     addDirectory(juce::File("/Library/Audio/Plug-Ins/VST3/EPS_files"));
+#elif JUCE_WINDOWS
+    addDirectory(juce::File::getSpecialLocation(
+                     juce::File::commonApplicationDataDirectory)
+                     .getChildFile("VST3/EPS_files"));
+#endif
     if (directories.isEmpty()) return;
 
     auto discover = [this, &directories](

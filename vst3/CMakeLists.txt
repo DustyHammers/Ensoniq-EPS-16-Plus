@@ -1,5 +1,5 @@
-if(NOT APPLE)
-  message(FATAL_ERROR "The first EPS-16 Plus plug-in prototype supports macOS only")
+if(NOT APPLE AND NOT WIN32)
+  message(FATAL_ERROR "The EPS-16 Plus plug-in supports macOS and Windows only")
 endif()
 
 set(EPS16_JUCE_DIR "${CMAKE_SOURCE_DIR}/work/deps/JUCE" CACHE PATH
@@ -20,7 +20,11 @@ add_library(eps16_vst3_bridge STATIC
   EmulatorBridge.h
 )
 target_include_directories(eps16_vst3_bridge PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
-target_compile_options(eps16_vst3_bridge PRIVATE -Wall -Wextra -Wpedantic)
+if(MSVC)
+  target_compile_options(eps16_vst3_bridge PRIVATE /W4)
+else()
+  target_compile_options(eps16_vst3_bridge PRIVATE -Wall -Wextra -Wpedantic)
+endif()
 
 # Musashi keeps its currently executing CPU in file globals.  The VST build
 # gives those transient registers thread-local storage; the durable context is
@@ -65,18 +69,37 @@ endforeach()
 # The replacement above retains the original 'extern' token; normalize it.
 string(REPLACE "extern _Thread_local extern " "extern _Thread_local "
        EPS16_MUSASHI_TLS_HEADER "${EPS16_MUSASHI_TLS_HEADER}")
-string(REPLACE "#include \"m68kops.h\""
-       "#include <pthread.h>\n#include \"m68kops.h\""
-       EPS16_MUSASHI_TLS_SOURCE "${EPS16_MUSASHI_TLS_SOURCE}")
-string(REPLACE
-  "\tstatic uint emulation_initialized = 0;\n\n\t/* The first call to this function initializes the opcode handler jump table */\n\tif(!emulation_initialized)\n\t\t{\n\t\tm68ki_build_opcode_table();\n\t\temulation_initialized = 1;\n\t}"
-  "static pthread_once_t opcode_table_once = PTHREAD_ONCE_INIT;\n\tpthread_once(&opcode_table_once, m68ki_build_opcode_table);"
-  EPS16_MUSASHI_TLS_SOURCE "${EPS16_MUSASHI_TLS_SOURCE}")
+if(WIN32)
+  string(REPLACE "_Thread_local" "__declspec(thread)"
+         EPS16_MUSASHI_TLS_SOURCE "${EPS16_MUSASHI_TLS_SOURCE}")
+  string(REPLACE "_Thread_local" "__declspec(thread)"
+         EPS16_MUSASHI_TLS_HEADER "${EPS16_MUSASHI_TLS_HEADER}")
+  string(REPLACE "#include \"m68kops.h\""
+         "#include <windows.h>\n#include \"m68kops.h\"\n\nstatic BOOL CALLBACK eps16_build_opcode_table_once(PINIT_ONCE once, PVOID parameter, PVOID *context)\n{\n\t(void)once; (void)parameter; (void)context;\n\tm68ki_build_opcode_table();\n\treturn TRUE;\n}"
+         EPS16_MUSASHI_TLS_SOURCE "${EPS16_MUSASHI_TLS_SOURCE}")
+  string(REPLACE
+    "\tstatic uint emulation_initialized = 0;\n\n\t/* The first call to this function initializes the opcode handler jump table */\n\tif(!emulation_initialized)\n\t\t{\n\t\tm68ki_build_opcode_table();\n\t\temulation_initialized = 1;\n\t}"
+    "\tstatic INIT_ONCE opcode_table_once = INIT_ONCE_STATIC_INIT;\n\tInitOnceExecuteOnce(&opcode_table_once, eps16_build_opcode_table_once, NULL, NULL);"
+    EPS16_MUSASHI_TLS_SOURCE "${EPS16_MUSASHI_TLS_SOURCE}")
+else()
+  string(REPLACE "#include \"m68kops.h\""
+         "#include <pthread.h>\n#include \"m68kops.h\""
+         EPS16_MUSASHI_TLS_SOURCE "${EPS16_MUSASHI_TLS_SOURCE}")
+  string(REPLACE
+    "\tstatic uint emulation_initialized = 0;\n\n\t/* The first call to this function initializes the opcode handler jump table */\n\tif(!emulation_initialized)\n\t\t{\n\t\tm68ki_build_opcode_table();\n\t\temulation_initialized = 1;\n\t}"
+    "static pthread_once_t opcode_table_once = PTHREAD_ONCE_INIT;\n\tpthread_once(&opcode_table_once, m68ki_build_opcode_table);"
+    EPS16_MUSASHI_TLS_SOURCE "${EPS16_MUSASHI_TLS_SOURCE}")
+endif()
+if(WIN32)
+  set(EPS16_TLS_DEFINITION "__declspec\\(thread\\) m68ki_cpu_core m68ki_cpu")
+  set(EPS16_TLS_DECLARATION "extern __declspec\\(thread\\) m68ki_cpu_core m68ki_cpu")
+else()
+  set(EPS16_TLS_DEFINITION "_Thread_local m68ki_cpu_core m68ki_cpu")
+  set(EPS16_TLS_DECLARATION "extern _Thread_local m68ki_cpu_core m68ki_cpu")
+endif()
 if(EPS16_MUSASHI_TLS_SOURCE MATCHES "static uint emulation_initialized" OR
-   NOT EPS16_MUSASHI_TLS_SOURCE MATCHES
-       "_Thread_local m68ki_cpu_core m68ki_cpu" OR
-   NOT EPS16_MUSASHI_TLS_HEADER MATCHES
-       "extern _Thread_local m68ki_cpu_core m68ki_cpu")
+   NOT EPS16_MUSASHI_TLS_SOURCE MATCHES "${EPS16_TLS_DEFINITION}" OR
+   NOT EPS16_MUSASHI_TLS_HEADER MATCHES "${EPS16_TLS_DECLARATION}")
   message(FATAL_ERROR "Musashi source layout is incompatible with VST TLS adaptation")
 endif()
 file(WRITE "${EPS16_MUSASHI_TLS_DIR}/m68kcpu.c"
@@ -94,16 +117,24 @@ target_compile_definitions(musashi_vst PUBLIC
   M68K_EMULATE_INT_ACK=M68K_OPT_ON
   M68K_INSTRUCTION_HOOK=M68K_OPT_ON
 )
-target_compile_options(musashi_vst PUBLIC
-  "-include${CMAKE_SOURCE_DIR}/native/musashi_config.h"
-)
+if(MSVC)
+  target_compile_options(musashi_vst PUBLIC
+    "/FI${CMAKE_SOURCE_DIR}/native/musashi_config.h"
+  )
+else()
+  target_compile_options(musashi_vst PUBLIC
+    "-include${CMAKE_SOURCE_DIR}/native/musashi_config.h"
+  )
+endif()
 target_include_directories(musashi_vst PUBLIC
   "${EPS16_MUSASHI_TLS_DIR}"
   "${MUSASHI_DIR}"
   "${MUSASHI_DIR}/softfloat"
   "${GENERATED_DIR}"
 )
-target_link_libraries(musashi_vst PUBLIC m pthread)
+if(NOT MSVC)
+  target_link_libraries(musashi_vst PUBLIC m pthread)
+endif()
 # The VST-specific Musashi target consumes the opcode files generated by the
 # regular target. Make that ordering explicit for completely fresh build
 # directories, including cross-architecture release builds.
@@ -129,12 +160,18 @@ target_include_directories(eps16_probe_machine PUBLIC
 )
 target_link_libraries(eps16_probe_machine PUBLIC musashi_vst)
 
+if(APPLE)
+  set(EPS16_PLUGIN_FORMATS AU VST3)
+else()
+  set(EPS16_PLUGIN_FORMATS VST3)
+endif()
+
 juce_add_plugin(Eps16Plus
   COMPANY_NAME "EPS-16 Plus Emulator"
   BUNDLE_ID "org.eps16plus.prototype"
   PLUGIN_MANUFACTURER_CODE EnIQ
   PLUGIN_CODE Ep16
-  FORMATS AU VST3
+  FORMATS ${EPS16_PLUGIN_FORMATS}
   PRODUCT_NAME "Ensoniq EPS-16 Plus"
   IS_SYNTH TRUE
   NEEDS_MIDI_INPUT TRUE
@@ -170,7 +207,10 @@ target_compile_definitions(Eps16Plus PRIVATE
   JUCE_VST3_CAN_REPLACE_VST2=0
 )
 
-if(CMAKE_OSX_ARCHITECTURES STREQUAL "x86_64")
+if(WIN32)
+  set(EPS16_VST3_PACKAGE_ARCH "windows-x64")
+  set(EPS16_VST3_PACKAGE_PLATFORM "Windows 10/11 x64")
+elseif(CMAKE_OSX_ARCHITECTURES STREQUAL "x86_64")
   set(EPS16_VST3_PACKAGE_ARCH "x86_64")
   set(EPS16_VST3_PACKAGE_PLATFORM "Intel macOS 10.13+")
 else()
@@ -178,6 +218,21 @@ else()
   set(EPS16_VST3_PACKAGE_PLATFORM "Apple Silicon macOS 11+")
 endif()
 
+if(WIN32)
+  add_custom_target(eps16_vst3_package
+    COMMAND "${CMAKE_COMMAND}"
+            "-DSOURCE_BUNDLE=$<TARGET_BUNDLE_DIR:Eps16Plus_VST3>"
+            "-DPACKAGE_DIR=${CMAKE_BINARY_DIR}/vst3-package"
+            "-DARCHIVE_NAME=Ensoniq-EPS-16-Plus-${PROJECT_VERSION}-Windows-x64.zip"
+            "-DRESOURCE_README=${CMAKE_CURRENT_SOURCE_DIR}/WindowsResourceFolder-README.txt"
+            "-DTHIRD_PARTY_NOTICES=${CMAKE_SOURCE_DIR}/THIRD_PARTY_NOTICES.md"
+            "-DJUCE_LICENSE=${EPS16_JUCE_DIR}/LICENSE.md"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/PackageWindows.cmake"
+    DEPENDS Eps16Plus_VST3
+    VERBATIM
+    COMMENT "Creating verified ${EPS16_VST3_PACKAGE_PLATFORM} VST3 package"
+  )
+else()
 add_custom_target(eps16_vst3_package
   COMMAND "${CMAKE_COMMAND}"
           "-DSOURCE_BUNDLE=$<TARGET_BUNDLE_DIR:Eps16Plus_VST3>"
@@ -191,7 +246,9 @@ add_custom_target(eps16_vst3_package
   VERBATIM
   COMMENT "Creating verified ${EPS16_VST3_PACKAGE_PLATFORM} VST3 package"
 )
+endif()
 
+if(APPLE)
 set(EPS16_X86_64_VST3_BUNDLE "" CACHE PATH
     "Built x86_64 VST3 bundle used to create the universal macOS package")
 set(EPS16_X86_64_AU_BUNDLE "" CACHE PATH
@@ -249,21 +306,26 @@ add_custom_target(eps16_au_package
 add_custom_target(eps16_plugin_packages
   DEPENDS eps16_vst3_package eps16_au_package
 )
+endif()
 
 add_executable(eps16_vst3_bridge_test BridgeTest.cpp)
 target_link_libraries(eps16_vst3_bridge_test PRIVATE eps16_vst3_bridge)
-target_compile_options(eps16_vst3_bridge_test PRIVATE
-  -Wall -Wextra -Wpedantic -UNDEBUG
-)
+if(NOT MSVC)
+  target_compile_options(eps16_vst3_bridge_test PRIVATE
+    -Wall -Wextra -Wpedantic -UNDEBUG
+  )
+endif()
 add_test(NAME vst3_bridge COMMAND eps16_vst3_bridge_test)
 
 add_executable(eps16_bandlimited_resampler_test
   BandlimitedResampler.cpp
   BandlimitedResamplerTest.cpp
 )
-target_compile_options(eps16_bandlimited_resampler_test PRIVATE
-  -Wall -Wextra -Wpedantic
-)
+if(NOT MSVC)
+  target_compile_options(eps16_bandlimited_resampler_test PRIVATE
+    -Wall -Wextra -Wpedantic
+  )
+endif()
 add_test(NAME vst3_bandlimited_resampler
          COMMAND eps16_bandlimited_resampler_test)
 
@@ -271,10 +333,12 @@ add_executable(eps16_host_input_resampler_test
   HostInputResampler.c
   HostInputResamplerTest.c
 )
-target_link_libraries(eps16_host_input_resampler_test PRIVATE m)
-target_compile_options(eps16_host_input_resampler_test PRIVATE
-  -Wall -Wextra -Wpedantic
-)
+if(NOT MSVC)
+  target_link_libraries(eps16_host_input_resampler_test PRIVATE m)
+  target_compile_options(eps16_host_input_resampler_test PRIVATE
+    -Wall -Wextra -Wpedantic
+  )
+endif()
 add_test(NAME vst3_host_input_resampler
          COMMAND eps16_host_input_resampler_test)
 

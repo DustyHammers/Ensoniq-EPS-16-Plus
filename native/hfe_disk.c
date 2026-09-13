@@ -116,12 +116,19 @@ static uint8_t *fat_entry(uint8_t *logical, unsigned int block) {
     return logical + (5U + fat_block) * EPS_SECTOR_SIZE + index * 3U;
 }
 
+static int has_efe_signature(const uint8_t *data, size_t size) {
+    static const uint8_t prefix[] = {'\r', '\n', 'E'};
+    static const uint8_t suffix[] = {' ', 'F', 'i', 'l', 'e', ':'};
+    return data && size >= 11 &&
+           !memcmp(data, prefix, sizeof(prefix)) &&
+           (data[3] == 'p' || data[3] == 'P') &&
+           (data[4] == 's' || data[4] == 'S') &&
+           !memcmp(data + 5, suffix, sizeof(suffix));
+}
+
 static int create_from_efe(const uint8_t *efe, size_t efe_size,
                            uint8_t *logical, size_t logical_size,
                            char *error, size_t error_size) {
-    static const uint8_t signature[] = {
-        '\r', '\n', 'E', 'p', 's', ' ', 'F', 'i', 'l', 'e', ':'
-    };
     enum {
         EFE_HEADER_SIZE = 512,
         EFE_NAME_OFFSET = 0x12,
@@ -136,7 +143,7 @@ static int create_from_efe(const uint8_t *efe, size_t efe_size,
     };
     if (!efe || efe_size < EFE_HEADER_SIZE ||
         efe_size % EPS_SECTOR_SIZE ||
-        memcmp(efe, signature, sizeof(signature)) || efe[0x31] != 0x1a) {
+        !has_efe_signature(efe, efe_size) || efe[0x31] != 0x1a) {
         fail(error, error_size, "invalid or truncated Ensoniq EFE header");
         return 0;
     }
@@ -583,7 +590,7 @@ static int disk_load(const char *path, uint8_t *logical, size_t logical_size,
             }
             free(decoded);
         }
-    } else if (length >= 11 && !memcmp(image, "\r\nEps File:", 11)) {
+    } else if (has_efe_signature(image, (size_t)length)) {
         ok = create_from_efe(image, (size_t)length, logical, logical_size,
                              error, error_size);
         if (ok) {
