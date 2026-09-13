@@ -135,6 +135,11 @@ menus from text or bypass the sampler's own logic.
 
 ### [Download Ensoniq EPS-16 Plus 1.0.10 — Windows x64 VST3](https://github.com/mardlib/Ensoniq-EPS-16-Plus/releases/download/v1.0.10/Ensoniq-EPS-16-Plus-1.0.10-Windows-x64.zip)
 
+SHA-256:
+
+- macOS: `6a1d67b5a2ec5619a1c925fd6b7fcd543be0a724d8fb10bde08f4d60b3e629b8`
+- Windows: `16729b7f17a2051bd92fa7e2af153fde7340522f507e40ecab038741a2710f0e`
+
 The macOS plug-ins support Intel Macs with macOS 10.13 High Sierra or newer
 and Apple Silicon Macs with macOS 11 or newer. The Windows VST3 supports
 64-bit Windows 10 and Windows 11 hosts.
