@@ -11,6 +11,17 @@ licence details.
 
 ![EPS-16 Plus VST3 panel and keyboard](docs/images/eps16-plus-vst3-panel-keyboard.png)
 
+## 1.1.0
+
+- Routed external channel-voice MIDI through the original EPS MIDI input,
+  preserving all 16 MIDI channels for the OS-controlled MULTI and MONO modes.
+- Added polyphonic and channel pressure plus channel-aware CC, program-change
+  and pitch-bend handling, including CC7, CC64 and Ensoniq patch-select CC70.
+- Fixed a Windows-only Musashi opcode-table overrun that could crash the VST3
+  as soon as ROM, KPC firmware and an OS disk were present together.
+- Added an automated Windows machine-start regression test to the build
+  workflow.
+
 ## 1.0.10
 
 - Added a native 64-bit Windows VST3 build and cloud build workflow.
@@ -163,8 +174,9 @@ and Apple Silicon Macs with macOS 11 or newer. The Windows VST3 supports
   audible playback controlled by the original OS.
 - Eight instruments/tracks, layers, wavesamples, stacking and the original
   front-panel editing workflow.
-- MIDI notes and velocity, Pitch Wheel, Mod Wheel and channel-1 polyphonic
-  aftertouch delivered through the appropriate emulated hardware paths.
+- MIDI notes, velocity, pitch bend, controllers, program changes, polyphonic
+  pressure and channel pressure delivered through the original MIDI input;
+  the EPS OS remains in charge of Base Channel, MULTI and MONO routing.
 - Standard EPS SysEx input and output through the emulated MIDI UART, governed
   by the original OS and its `MIDI SYS-EX` setting.
 - Original EPS sequencer controls. Ableton tempo, Start, Continue and Stop can
