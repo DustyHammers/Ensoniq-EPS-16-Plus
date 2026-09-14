@@ -142,14 +142,14 @@ menus from text or bypass the sampler's own logic.
 
 ## Download
 
-### [Download Ensoniq EPS-16 Plus 1.1.0 — macOS Universal AU + VST3](https://github.com/mardlib/Ensoniq-EPS-16-Plus/releases/download/v1.1.0/Ensoniq-EPS-16-Plus-1.1.0-macOS-universal.zip)
+### [Download Ensoniq EPS-16 Plus 1.0.10 — macOS Universal AU + VST3](https://github.com/mardlib/Ensoniq-EPS-16-Plus/releases/download/v1.0.10/Ensoniq-EPS-16-Plus-1.0.10-macOS-universal.zip)
 
-### [Download Ensoniq EPS-16 Plus 1.1.0 — Windows x64 VST3](https://github.com/mardlib/Ensoniq-EPS-16-Plus/releases/download/v1.1.0/Ensoniq-EPS-16-Plus-1.1.0-Windows-x64.zip)
+### [Download Ensoniq EPS-16 Plus 1.0.10 — Windows x64 VST3](https://github.com/mardlib/Ensoniq-EPS-16-Plus/releases/download/v1.0.10/Ensoniq-EPS-16-Plus-1.0.10-Windows-x64.zip)
 
 SHA-256:
 
-- macOS: `ef213bc19dd41c23010cd39a2318f3b01412d34ec1546076defd08632e5a18b2`
-- Windows: `3a0318a86bebb26d30db7dfca299a12a892b9a4a830f3665789b3a806c1ddbb4`
+- macOS: `02e51aa61d78b080f9d56d6bf952a881bf0ff72bfe7fdc977b99dc8c97e29996`
+- Windows: `16729b7f17a2051bd92fa7e2af153fde7340522f507e40ecab038741a2710f0e`
 
 The macOS plug-ins support Intel Macs with macOS 10.13 High Sierra or newer
 and Apple Silicon Macs with macOS 11 or newer. The Windows VST3 supports
