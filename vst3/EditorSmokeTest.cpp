@@ -36,16 +36,21 @@ int main(int argc, char **argv) {
                                   kpcFile.getFile().getFullPathName());
         processor.setResourcePath(Eps16PlusProcessor::osDiskPathKey,
                                   diskFile.getFile().getFullPathName());
+        std::cerr << "synthetic-startup: prepare\n";
         processor.prepareToPlay(48000.0, 512);
         if (!processor.machineReady()) {
             std::cerr << processor.machineStatus() << '\n';
             return 31;
         }
+        std::cerr << "synthetic-startup: prepared\n";
         juce::AudioBuffer<float> audio(4, 512);
         juce::MidiBuffer midi;
         audio.clear();
-        for (int block = 0; block < 8; ++block)
+        for (int block = 0; block < 8; ++block) {
+            std::cerr << "synthetic-startup: block " << block << '\n';
             processor.processBlock(audio, midi);
+        }
+        std::cerr << "synthetic-startup: complete\n";
         return processor.cpuCycles() > 0 ? 0 : 32;
     }
     if (argc == 6 && std::string(argv[1]) == "--verify-split-resources") {

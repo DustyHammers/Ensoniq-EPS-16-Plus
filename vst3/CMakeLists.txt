@@ -407,6 +407,15 @@ target_link_libraries(eps16_vst3_editor_smoke_test PRIVATE
 add_test(NAME vst3_editor_smoke COMMAND eps16_vst3_editor_smoke_test)
 add_test(NAME vst3_synthetic_machine_start
          COMMAND eps16_vst3_editor_smoke_test --synthetic-startup)
+option(EPS16_WINDOWS_ASAN "Instrument the Windows machine-start test" OFF)
+if(MSVC AND EPS16_WINDOWS_ASAN)
+  foreach(TARGET_NAME Eps16Plus eps16_vst3_bridge musashi_vst
+                      eps16_probe_machine eps16_vst3_editor_smoke_test)
+    target_compile_options(${TARGET_NAME} PRIVATE /fsanitize=address /Zi)
+  endforeach()
+  target_link_options(eps16_vst3_editor_smoke_test PRIVATE
+                      /fsanitize=address /INCREMENTAL:NO)
+endif()
 
 add_executable(eps16_vst3_plugin_state_test PluginStateTest.cpp)
 target_link_libraries(eps16_vst3_plugin_state_test PRIVATE
