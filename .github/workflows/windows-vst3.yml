@@ -31,22 +31,15 @@ jobs:
           git -C work/deps/Musashi checkout --detach FETCH_HEAD
 
       - name: Configure
-        run: cmake -S . -B work/windows-vst3-build -G "Visual Studio 17 2022" -A x64 -DEPS16_BUILD_VST3=ON -DEPS16_WINDOWS_ASAN=ON -DEPS16_JUCE_DIR="${{ github.workspace }}/work/deps/JUCE"
+        run: cmake -S . -B work/windows-vst3-build -G "Visual Studio 17 2022" -A x64 -DEPS16_BUILD_VST3=ON -DEPS16_JUCE_DIR="${{ github.workspace }}/work/deps/JUCE"
 
       - name: Build and run Windows machine-start test
         run: |
           cmake --build work/windows-vst3-build --config Release --target eps16_vst3_editor_smoke_test --parallel
-          $toolset = Get-ChildItem "${env:ProgramFiles}\Microsoft Visual Studio\2022\Enterprise\VC\Tools\MSVC" -Directory | Sort-Object Name -Descending | Select-Object -First 1
-          $asan = Get-ChildItem $toolset.FullName -Recurse -Filter clang_rt.asan_dynamic-x86_64.dll | Where-Object { $_.DirectoryName -match 'Hostx64.x64' } | Select-Object -First 1
-          if (-not $asan) { throw "Visual Studio ASan runtime not found" }
-          Write-Host "Using ASan runtime $($asan.FullName)"
-          Copy-Item "$($asan.DirectoryName)\clang_rt.asan*.dll" work/windows-vst3-build/vst3/Release/
           ctest --test-dir work/windows-vst3-build -C Release -R vst3_synthetic_machine_start --output-on-failure
 
       - name: Build and package
-        run: |
-          cmake -S . -B work/windows-vst3-build -DEPS16_WINDOWS_ASAN=OFF
-          cmake --build work/windows-vst3-build --config Release --target eps16_vst3_package --parallel
+        run: cmake --build work/windows-vst3-build --config Release --target eps16_vst3_package --parallel
 
       - name: Upload Windows VST3
         uses: actions/upload-artifact@v4
