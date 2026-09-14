@@ -22,11 +22,36 @@ endif()
 set(GENERATED_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated")
 file(MAKE_DIRECTORY "${GENERATED_DIR}")
 
+# Musashi's generated opcode-table builder walks mask groups using an
+# unbounded sentinel search.  MSVC can order the generated groups such that
+# the first search reaches and steps past the sentinel.  Give every group
+# walk an explicit end pointer; the existing generic first pass still handles
+# any group that is not in the expected optimized order.
+set(EPS16_MUSASHI_INPUT_DIR "${CMAKE_CURRENT_BINARY_DIR}/musashi-input")
+set(EPS16_MUSASHI_INPUT "${EPS16_MUSASHI_INPUT_DIR}/m68k_in.c")
+file(MAKE_DIRECTORY "${EPS16_MUSASHI_INPUT_DIR}")
+file(READ "${MUSASHI_DIR}/m68k_in.c" EPS16_MUSASHI_INPUT_SOURCE)
+string(REPLACE
+  "const opcode_handler_struct *ostruct;"
+  "const opcode_handler_struct *ostruct;\n\tconst opcode_handler_struct *table_end;"
+  EPS16_MUSASHI_INPUT_SOURCE "${EPS16_MUSASHI_INPUT_SOURCE}")
+string(REPLACE
+  "ostruct = m68k_opcode_handler_table;"
+  "ostruct = m68k_opcode_handler_table;\n\ttable_end = m68k_opcode_handler_table + (sizeof(m68k_opcode_handler_table) / sizeof(m68k_opcode_handler_table[0])) - 1;"
+  EPS16_MUSASHI_INPUT_SOURCE "${EPS16_MUSASHI_INPUT_SOURCE}")
+string(REPLACE "while(ostruct->mask"
+               "while(ostruct < table_end && ostruct->mask"
+               EPS16_MUSASHI_INPUT_SOURCE "${EPS16_MUSASHI_INPUT_SOURCE}")
+if(EPS16_MUSASHI_INPUT_SOURCE MATCHES "while\\(ostruct->mask")
+  message(FATAL_ERROR "Musashi opcode-table bounds patch was incomplete")
+endif()
+file(WRITE "${EPS16_MUSASHI_INPUT}" "${EPS16_MUSASHI_INPUT_SOURCE}")
+
 add_executable(m68kmake "${MUSASHI_DIR}/m68kmake.c")
 add_custom_command(
   OUTPUT "${GENERATED_DIR}/m68kops.c" "${GENERATED_DIR}/m68kops.h"
-  COMMAND m68kmake "${GENERATED_DIR}" "${MUSASHI_DIR}/m68k_in.c"
-  DEPENDS m68kmake "${MUSASHI_DIR}/m68k_in.c"
+  COMMAND m68kmake "${GENERATED_DIR}" "${EPS16_MUSASHI_INPUT}"
+  DEPENDS m68kmake "${EPS16_MUSASHI_INPUT}"
   VERBATIM
 )
 
