@@ -414,7 +414,7 @@ if(MSVC AND EPS16_WINDOWS_ASAN)
     target_compile_options(${TARGET_NAME} PRIVATE /fsanitize=address /Zi)
   endforeach()
   target_link_options(eps16_vst3_editor_smoke_test PRIVATE
-                      /fsanitize=address /INCREMENTAL:NO)
+                      /DEBUG /INCREMENTAL:NO)
 endif()
 
 add_executable(eps16_vst3_plugin_state_test PluginStateTest.cpp)
