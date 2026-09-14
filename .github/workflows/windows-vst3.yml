@@ -36,9 +36,11 @@ jobs:
       - name: Build and run Windows machine-start test
         run: |
           cmake --build work/windows-vst3-build --config Release --target eps16_vst3_editor_smoke_test --parallel
-          $asan = Get-ChildItem "${env:ProgramFiles}\Microsoft Visual Studio\2022\Enterprise\VC\Tools" -Recurse -Filter clang_rt.asan_dynamic-x86_64.dll | Select-Object -First 1
+          $toolset = Get-ChildItem "${env:ProgramFiles}\Microsoft Visual Studio\2022\Enterprise\VC\Tools\MSVC" -Directory | Sort-Object Name -Descending | Select-Object -First 1
+          $asan = Get-ChildItem $toolset.FullName -Recurse -Filter clang_rt.asan_dynamic-x86_64.dll | Where-Object { $_.DirectoryName -match 'Hostx64.x64' } | Select-Object -First 1
           if (-not $asan) { throw "Visual Studio ASan runtime not found" }
-          Copy-Item $asan.FullName work/windows-vst3-build/vst3/Release/
+          Write-Host "Using ASan runtime $($asan.FullName)"
+          Copy-Item "$($asan.DirectoryName)\clang_rt.asan*.dll" work/windows-vst3-build/vst3/Release/
           ctest --test-dir work/windows-vst3-build -C Release -R vst3_synthetic_machine_start --output-on-failure
 
       - name: Build and package
