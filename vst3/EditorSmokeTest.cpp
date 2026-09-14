@@ -2,12 +2,52 @@
 
 #include <juce_gui_basics/juce_gui_basics.h>
 
+#include <cstdint>
+#include <cstring>
 #include <iostream>
 #include <memory>
 
 int main(int argc, char **argv) {
     const juce::ScopedJuceInitialiser_GUI gui;
     Eps16PlusProcessor processor;
+    if (argc == 2 && std::string(argv[1]) == "--synthetic-startup") {
+        juce::TemporaryFile romFile(".bin");
+        juce::TemporaryFile kpcFile(".bin");
+        juce::TemporaryFile diskFile(".img");
+        juce::MemoryBlock rom(128 * 1024, true);
+        juce::MemoryBlock kpc(32 * 1024, true);
+        juce::MemoryBlock disk(80 * 2 * 10 * 512, true);
+        auto *romBytes = static_cast<std::uint8_t *>(rom.getData());
+        romBytes[1] = 0x00;
+        romBytes[2] = 0x80;
+        romBytes[5] = 0xc0;
+        romBytes[7] = 0x08;
+        std::memset(kpc.getData(), 0xff, kpc.getSize());
+        auto *kpcBytes = static_cast<std::uint8_t *>(kpc.getData());
+        kpcBytes[kpc.getSize() - 2] = 0xe0;
+        kpcBytes[kpc.getSize() - 1] = 0x00;
+        if (!romFile.getFile().replaceWithData(rom.getData(), rom.getSize()) ||
+            !kpcFile.getFile().replaceWithData(kpc.getData(), kpc.getSize()) ||
+            !diskFile.getFile().replaceWithData(disk.getData(), disk.getSize()))
+            return 30;
+        processor.setResourcePath(Eps16PlusProcessor::romPathKey,
+                                  romFile.getFile().getFullPathName());
+        processor.setResourcePath(Eps16PlusProcessor::kpcPathKey,
+                                  kpcFile.getFile().getFullPathName());
+        processor.setResourcePath(Eps16PlusProcessor::osDiskPathKey,
+                                  diskFile.getFile().getFullPathName());
+        processor.prepareToPlay(48000.0, 512);
+        if (!processor.machineReady()) {
+            std::cerr << processor.machineStatus() << '\n';
+            return 31;
+        }
+        juce::AudioBuffer<float> audio(4, 512);
+        juce::MidiBuffer midi;
+        audio.clear();
+        for (int block = 0; block < 8; ++block)
+            processor.processBlock(audio, midi);
+        return processor.cpuCycles() > 0 ? 0 : 32;
+    }
     if (argc == 6 && std::string(argv[1]) == "--verify-split-resources") {
         processor.refreshResourcePaths();
         const auto matches = [&processor](const juce::Identifier &key,

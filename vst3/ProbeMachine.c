@@ -656,20 +656,17 @@ void eps16_probe_machine_midi(uint8_t status, uint8_t data1, uint8_t data2) {
         return;
     }
     const unsigned int kind = status & 0xf0;
-    const unsigned int channel = status & 0x0f;
-    if (kind == 0x90 && data2) {
-        live_note(data1, data2, 1);
-    } else if (kind == 0x80 || (kind == 0x90 && !data2))
-        live_note(data1, data2, 0);
-    else if (kind == 0xa0 && channel == 0 &&
-             midi_wire_count <=
-                 sizeof(midi_wire) / sizeof(midi_wire[0]) - 3) {
-        midi_schedule_at(status, bus_cycle_now());
-        midi_schedule_at(data1, bus_cycle_now());
+    const size_t message_size =
+        kind == 0xc0 || kind == 0xd0 ? 2U :
+        kind >= 0x80 && kind <= 0xe0 ? 3U : 0U;
+    if (!message_size ||
+        midi_wire_count >
+            sizeof(midi_wire) / sizeof(midi_wire[0]) - message_size)
+        return;
+    midi_schedule_at(status, bus_cycle_now());
+    midi_schedule_at(data1, bus_cycle_now());
+    if (message_size == 3)
         midi_schedule_at(data2, bus_cycle_now());
-    } else if ((kind == 0xe0 || (kind == 0xb0 && data1 == 1)) &&
-               channel == 0)
-        live_performance_midi(status, data1, data2);
 }
 
 void eps16_probe_machine_keyboard(uint8_t note, uint8_t velocity,

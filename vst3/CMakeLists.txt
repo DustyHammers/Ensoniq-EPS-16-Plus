@@ -405,6 +405,8 @@ target_link_libraries(eps16_vst3_editor_smoke_test PRIVATE
   juce::juce_gui_basics
 )
 add_test(NAME vst3_editor_smoke COMMAND eps16_vst3_editor_smoke_test)
+add_test(NAME vst3_synthetic_machine_start
+         COMMAND eps16_vst3_editor_smoke_test --synthetic-startup)
 
 add_executable(eps16_vst3_plugin_state_test PluginStateTest.cpp)
 target_link_libraries(eps16_vst3_plugin_state_test PRIVATE
