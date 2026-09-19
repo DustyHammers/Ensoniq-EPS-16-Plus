@@ -1,5 +1,7 @@
 #include "PanelEditor.h"
 
+#include "BinaryData.h"
+
 #include <algorithm>
 #include <array>
 #include <cstring>
@@ -7,15 +9,13 @@
 
 namespace {
 constexpr int rackWidth = 1350;
-constexpr int rackHeight = 285;
+constexpr int rackHeight = 380;
 constexpr int keyboardHeight = 215;
 constexpr int expandedRackHeight = rackHeight + keyboardHeight;
-const juce::Colour panelColour{0xff3b3d3c};
 const juce::Colour buttonColour{0xff252625};
 const juce::Colour displayColour{0xff55eaff};
 const juce::Colour displayDimColour{0xff17353a};
 const juce::Colour rackLabelColour{0xffe8e5df};
-const juce::Colour accentColour{0xff9d4f82};
 
 /* FIP 22AM5R alphanumeric cell, as labelled on the EPS-16 Plus keypad/display
    schematic: fourteen directly-driven segments SA..SN plus decimal point. */
@@ -182,104 +182,23 @@ void drawVfdCell(juce::Graphics &graphics, juce::Rectangle<float> cell,
 
 void Eps16PanelEditor::EpsFaderLookAndFeel::drawLinearSlider(
     juce::Graphics &graphics, int x, int y, int width, int height,
-    float sliderPosition, float minimumSliderPosition,
-    float maximumSliderPosition, juce::Slider::SliderStyle style,
-    juce::Slider &slider) {
-    if (style != juce::Slider::LinearVertical) {
-        juce::LookAndFeel_V4::drawLinearSlider(
-            graphics, x, y, width, height, sliderPosition,
-            minimumSliderPosition, maximumSliderPosition, style, slider);
-        return;
-    }
+    float sliderPosition, float /*minimumSliderPosition*/,
+    float /*maximumSliderPosition*/, juce::Slider::SliderStyle style,
+    juce::Slider & /*slider*/) {
+    juce::ignoreUnused(style);
 
-    const float scale = juce::jmax(0.55f, (float)height / 198.0f);
-    const auto originalOuter =
-        juce::Rectangle<float>((float)x, (float)y, (float)width,
-                               (float)height)
-            .reduced(13.0f * scale, 2.0f * scale);
-    auto outer = originalOuter;
-    /* JUCE shortens the painting area to leave room for the thumb.  On the
-       EPS the recessed fader track itself reaches the display's upper edge.
-       Extend only that recess upward; its component and lower edge stay put. */
-    outer.setTop(2.0f * scale);
-    const float outerRadius = 3.0f * scale;
+    const int trackWidth = juce::jmax(2, width / 5);
+    graphics.setColour(juce::Colour{0xff080908});
+    graphics.fillRect(x + (width - trackWidth) / 2, y, trackWidth, height);
 
-    graphics.setColour(juce::Colour{0xff444744});
-    graphics.fillRoundedRectangle(outer, outerRadius);
-    graphics.setColour(juce::Colour{0xff171817});
-    graphics.drawRoundedRectangle(outer, outerRadius, 1.0f * scale);
-
-    auto cavity = outer.reduced(3.0f * scale);
-    graphics.setGradientFill(juce::ColourGradient{
-        juce::Colour{0xff151615}, cavity.getTopLeft(),
-        juce::Colour{0xff343634}, cavity.getBottomRight(), false});
-    graphics.fillRoundedRectangle(cavity, 1.5f * scale);
-    graphics.setColour(juce::Colour{0xff0b0c0b});
-    graphics.drawRoundedRectangle(cavity, 1.5f * scale, 1.0f * scale);
-
-    const float slotWidth = juce::jmax(5.0f * scale, cavity.getWidth() * 0.17f);
-    auto slot = juce::Rectangle<float>(
-        cavity.getCentreX() - slotWidth * 0.5f,
-        cavity.getY() + 18.0f * scale, slotWidth,
-        cavity.getHeight() - 36.0f * scale);
-    graphics.setGradientFill(juce::ColourGradient{
-        juce::Colour{0xff080908}, slot.getX(), slot.getCentreY(),
-        juce::Colour{0xff272927}, slot.getRight(), slot.getCentreY(), false});
-    graphics.fillRect(slot);
-    graphics.setColour(juce::Colour{0xff050605});
-    graphics.drawRect(slot, 0.9f * scale);
-
-    const float originalCavityHeight =
-        originalOuter.reduced(3.0f * scale).getHeight();
-    const float thumbHeight =
-        juce::jmax(33.0f * scale, originalCavityHeight * 0.205f);
-    const float thumbWidth = cavity.getWidth() - 7.0f * scale;
-    const float valueProportion =
-        (float)slider.valueToProportionOfLength(slider.getValue());
-    const float extendedSliderPosition = juce::jmap(
-        valueProportion, cavity.getBottom() - thumbHeight * 0.5f,
-        cavity.getY() + thumbHeight * 0.5f);
-    const float thumbY = juce::jlimit(
-        cavity.getY(), cavity.getBottom() - thumbHeight,
-        extendedSliderPosition - thumbHeight * 0.5f);
-    auto thumb = juce::Rectangle<float>(
-        cavity.getCentreX() - thumbWidth * 0.5f, thumbY,
-        thumbWidth, thumbHeight);
-
-    graphics.setColour(juce::Colour{0x52000000});
-    graphics.fillRoundedRectangle(
-        thumb.translated(1.7f * scale, 2.2f * scale), 1.8f * scale);
-    graphics.setGradientFill(juce::ColourGradient{
-        juce::Colour{0xff555855}, thumb.getX(), thumb.getY(),
-        juce::Colour{0xff181a18}, thumb.getRight(), thumb.getBottom(), false});
-    graphics.fillRoundedRectangle(thumb, 1.6f * scale);
-    graphics.setColour(juce::Colour{0xff0c0d0c});
-    graphics.drawRoundedRectangle(thumb, 1.6f * scale, 1.0f * scale);
-
-    const float smoothHeight = thumbHeight * 0.42f;
-    graphics.setGradientFill(juce::ColourGradient{
-        juce::Colour{0xff656865}, thumb.getX(), thumb.getY(),
-        juce::Colour{0xff303230}, thumb.getX(),
-        thumb.getY() + smoothHeight, false});
-    graphics.fillRect(thumb.getX() + 1.2f * scale,
-                      thumb.getY() + 1.2f * scale,
-                      thumb.getWidth() - 2.4f * scale,
-                      smoothHeight - 1.2f * scale);
-
-    const float gripTop = thumb.getY() + smoothHeight;
-    const float gripBottom = thumb.getBottom() - 2.0f * scale;
-    constexpr int ridgeCount = 6;
-    const float ridgeStep = (gripBottom - gripTop) / ridgeCount;
-    for (int ridge = 0; ridge < ridgeCount; ++ridge) {
-        const float ridgeY = gripTop + ridgeStep * (float)ridge;
-        const float darkHeight = juce::jmax(1.2f * scale, ridgeStep * 0.44f);
-        graphics.setColour(juce::Colour{0xff111211});
-        graphics.fillRect(thumb.getX() + 1.5f * scale, ridgeY,
-                          thumb.getWidth() - 3.0f * scale, darkHeight);
-        graphics.setColour(juce::Colour{0xff747774});
-        graphics.fillRect(thumb.getX() + 2.2f * scale, ridgeY + darkHeight,
-                          thumb.getWidth() - 4.4f * scale,
-                          juce::jmax(0.65f * scale, ridgeStep * 0.18f));
+    if (thumbImage.isValid()) {
+        const int thumbSize = juce::jmin(width, height / 4);
+        const int thumbX = x + (width - thumbSize) / 2;
+        const int thumbY = (int)sliderPosition - thumbSize / 2;
+        graphics.drawImage(thumbImage,
+                           thumbX, thumbY, thumbSize, thumbSize,
+                           0, 0, thumbImage.getWidth(),
+                           thumbImage.getHeight(), false);
     }
 }
 
@@ -413,6 +332,12 @@ void Eps16PanelEditor::PanelButton::setShiftChordCode(std::uint8_t rawCode) {
     shiftChordCode = rawCode;
 }
 
+void Eps16PanelEditor::PanelButton::setSprite(const juce::Image &sheet,
+                                              Style style) {
+    spriteSheet = sheet;
+    buttonStyle = style;
+}
+
 void Eps16PanelEditor::PanelButton::startActivationGlow() {
     activationGlowStartedMs = juce::Time::getMillisecondCounterHiRes();
     repaint();
@@ -429,7 +354,17 @@ void Eps16PanelEditor::PanelButton::updateActivationGlow(double nowMs) {
 void Eps16PanelEditor::PanelButton::paintButton(juce::Graphics &graphics,
                                                 bool highlighted,
                                                 bool down) {
-    TextButton::paintButton(graphics, highlighted, down);
+    if (spriteSheet.isValid()) {
+        /* Frame 0 (y=0)   = Lit   - default / released state
+           Frame 1 (y=100) = Pressed - momentary, returns to Lit on mouseUp */
+        const int frameY = (down || pressed) ? 100 : 0;
+        graphics.drawImage(spriteSheet,
+                           0, 0, getWidth(), getHeight(),
+                           0, frameY, 100, 100,
+                           false);
+    } else {
+        TextButton::paintButton(graphics, highlighted, down);
+    }
     if (activationGlowStartedMs < 0.0) return;
 
     static constexpr double durationMs = 260.0;
@@ -789,8 +724,24 @@ Eps16PanelEditor::Eps16PanelEditor(Eps16PlusProcessor &processorToUse)
     : AudioProcessorEditor(processorToUse), owner(processorToUse),
       pianoKeyboard(processorToUse) {
     setSize(rackWidth, rackHeight);
+
+    auto loadImg = [](const char *data, int bytes) {
+        return juce::ImageCache::getFromMemory(data, bytes);
+    };
+    panelBackground = loadImg(BinaryData::panel_background_png,
+                              BinaryData::panel_background_pngSize);
+    spriteSmallBlack = loadImg(BinaryData::sprite_small_black_png,
+                               BinaryData::sprite_small_black_pngSize);
+    spriteSmallGrey = loadImg(BinaryData::sprite_small_grey_png,
+                              BinaryData::sprite_small_grey_pngSize);
+    spriteLargeBlack = loadImg(BinaryData::sprite_large_black_png,
+                               BinaryData::sprite_large_black_pngSize);
+    sliderThumb = loadImg(BinaryData::slider_thumb_png,
+                          BinaryData::slider_thumb_pngSize);
+    faderLookAndFeel.thumbImage = sliderThumb;
+
     setResizable(true, true);
-    setResizeLimits(1080, 228, 1620, 342);
+    setResizeLimits(1080, 304, 1620, 456);
     setWantsKeyboardFocus(true);
     setMouseClickGrabsKeyboardFocus(true);
     if (auto *constrainer = getConstrainer())
@@ -957,6 +908,29 @@ Eps16PanelEditor::Eps16PanelEditor(Eps16PlusProcessor &processorToUse)
     sequencerButtons[2] = &addPanelButton("PLAY", 0x1d);
     sequencerButtons[2]->setShiftChordCode(0x03);
     sequencerButtons[2]->setTooltip("PLAY (Shift-click: RECORD + PLAY)");
+
+    // Small grey: LOAD/CMD/EDIT + RECORD/STOP*CONT/PLAY
+    for (int index : {0, 1, 2})
+        modeButtons[index]->setSprite(spriteSmallGrey,
+                                      PanelButton::Style::SmallGrey);
+    for (auto *button : sequencerButtons)
+        button->setSprite(spriteSmallGrey, PanelButton::Style::SmallGrey);
+    // Large black: track 1-8, No/Cancel, Yes/Enter
+    for (auto *button : trackButtons)
+        button->setSprite(spriteLargeBlack, PanelButton::Style::LargeBlack);
+    cancelButton->setSprite(spriteLargeBlack, PanelButton::Style::LargeBlack);
+    enterButton->setSprite(spriteLargeBlack, PanelButton::Style::LargeBlack);
+    // Small black: page buttons, nav, INST/SEQ SONG/SYSTEM MIDI/EFFECTS
+    for (auto *button : pageButtons)
+        if (button)
+            button->setSprite(spriteSmallBlack,
+                              PanelButton::Style::SmallBlack);
+    for (int index : {3, 4, 5, 6})
+        modeButtons[index]->setSprite(spriteSmallBlack,
+                                      PanelButton::Style::SmallBlack);
+    for (auto *button : {upButton, downButton, leftButton, rightButton})
+        button->setSprite(spriteSmallBlack, PanelButton::Style::SmallBlack);
+    // Disk buttons (OS/NEW/LOAD/SAVE) - no sprite assigned, remain procedural.
 
     auto configureFader = [this](juce::Slider &slider, const juce::String &name) {
         slider.setName(name);
@@ -1228,78 +1202,20 @@ void Eps16PanelEditor::timerCallback() {
 }
 
 void Eps16PanelEditor::paint(juce::Graphics &graphics) {
-    graphics.fillAll(panelColour);
+    // Scale pre-rendered background PNG to component bounds
+    graphics.drawImage(panelBackground,
+                       0, 0, getWidth(), getHeight(),
+                       0, 0,
+                       panelBackground.getWidth(),
+                       panelBackground.getHeight());
     if (pageButtons.front() == nullptr) return;
     const int designHeight = keyboardExpanded ? expandedRackHeight : rackHeight;
     const float scale = juce::jmin(
         (float)getWidth() / rackWidth,
         (float)getHeight() / static_cast<float>(designHeight));
-    graphics.setColour(rackLabelColour);
 
-    auto above = [&graphics, scale](const PanelButton *button,
-                                    const juce::String &text, int height = 13) {
-        const auto bounds = button->getBounds();
-        const int margin = juce::roundToInt(5.0f * scale);
-        const int scaledHeight = juce::roundToInt((float)height * scale);
-        graphics.drawText(text, bounds.getX() - margin,
-                          bounds.getY() - scaledHeight,
-                          bounds.getWidth() + margin * 2, scaledHeight,
-                          juce::Justification::centred);
-    };
-    auto below = [&graphics, scale](const PanelButton *button,
-                                    const juce::String &text, int height = 13) {
-        const auto bounds = button->getBounds();
-        const int margin = juce::roundToInt(12.0f * scale);
-        const int scaledHeight = juce::roundToInt((float)height * scale);
-        graphics.drawText(text, bounds.getX() - margin, bounds.getBottom(),
-                          bounds.getWidth() + margin * 2, scaledHeight,
-                          juce::Justification::centred);
-    };
-
-    graphics.setFont(9.5f * scale);
-    static const char *pageTop[12] = {
-        "1", "2", "3", "4", "5", "6", "7", "8", "9", "", "0", ""
-    };
-    static const char *pageBottom[12] = {
-        "ENV 1", "ENV 2", "ENV 3", "PITCH", "FILTER", "AMP",
-        "LFO", "WAVE", "LAYER", "SAMPLE", "TRACK", ""
-    };
-    for (std::size_t index = 0; index < pageButtons.size(); ++index) {
-        if (*pageTop[index]) above(pageButtons[index], pageTop[index]);
-        if (*pageBottom[index]) below(pageButtons[index], pageBottom[index]);
-    }
-    graphics.setFont(7.5f * scale);
-    const auto effectBounds = pageButtons[11]->getBounds();
-    graphics.drawText("EFFECT", effectBounds.getX() - 8,
-                      effectBounds.getBottom(), effectBounds.getWidth() + 16,
-                      juce::roundToInt(9 * scale), juce::Justification::centred);
-    graphics.drawText("SELECT", effectBounds.getX() - 8,
-                      effectBounds.getBottom() + juce::roundToInt(8 * scale),
-                      effectBounds.getWidth() + 16, juce::roundToInt(9 * scale),
-                      juce::Justification::centred);
-    graphics.drawText("BYPASS", effectBounds.getX() - 8,
-                      effectBounds.getBottom() + juce::roundToInt(16 * scale),
-                      effectBounds.getWidth() + 16, juce::roundToInt(9 * scale),
-                      juce::Justification::centred);
-
-    graphics.setFont(8.5f * scale);
-    static const char *modeLabels[7] = {
-        "LOAD", "CMD", "EDIT", "INST", "SEQ SONG", "SYSTEM MIDI", "EFFECTS"
-    };
-    for (std::size_t index = 0; index < modeButtons.size(); ++index)
-        below(modeButtons[index], modeLabels[index]);
-
-    graphics.setFont(9.5f * scale);
-    const int trackHeaderX = trackButtons.front()->getX();
-    const int trackHeaderRight = trackButtons.back()->getRight();
-    graphics.drawText(
-        juce::CharPointer_UTF8("INSTRUMENTS  \xe2\x80\xa2  TRACKS"),
-        trackHeaderX,
-                      trackButtons.front()->getY() - juce::roundToInt(38 * scale),
-                      trackHeaderRight - trackHeaderX,
-                      juce::roundToInt(13 * scale),
-                      juce::Justification::centred);
-
+    // Track LED drawing — dynamic emulator state, not baked into the
+    // background PNG.
     const auto ledPhase = [this](unsigned int bit) {
         const auto mask = (std::uint16_t)(UINT16_C(1) << bit);
         return (trackLedOn & mask) &&
@@ -1329,120 +1245,6 @@ void Eps16PanelEditor::paint(juce::Graphics &graphics) {
         drawLed({ledX, selectedY, ledWidth, ledHeight}, selectedColour,
                 ledPhase(index + 8));
     }
-    graphics.setFont(5.8f * scale);
-    graphics.setColour(rackLabelColour.withAlpha(0.72f));
-    graphics.drawText("LOADED", trackHeaderX - juce::roundToInt(40 * scale),
-                      trackButtons.front()->getY() - juce::roundToInt(22 * scale),
-                      juce::roundToInt(38 * scale), juce::roundToInt(8 * scale),
-                      juce::Justification::centredRight);
-    graphics.drawText("SELECTED", trackHeaderRight + juce::roundToInt(2 * scale),
-                      trackButtons.front()->getY() - juce::roundToInt(13 * scale),
-                      juce::roundToInt(45 * scale), juce::roundToInt(8 * scale),
-                      juce::Justification::centredLeft);
-
-    graphics.setFont(7.5f * scale);
-    static const char *sequenceLabels[3] = {"RECORD", "STOP / CONT", "PLAY"};
-    for (std::size_t index = 0; index < sequencerButtons.size(); ++index)
-        above(sequencerButtons[index], sequenceLabels[index], 12);
-
-    auto drawNavigationTriangle =
-        [&graphics, scale](juce::Point<float> centre, float rotation) {
-            const float radius = 8.0f * scale;
-            juce::Path triangle;
-            for (int vertex = 0; vertex < 3; ++vertex) {
-                const float angle =
-                    rotation +
-                    juce::MathConstants<float>::twoPi * (float)vertex / 3.0f;
-                const auto point =
-                    centre + juce::Point<float>(std::cos(angle),
-                                                std::sin(angle)) *
-                                 radius;
-                if (vertex == 0)
-                    triangle.startNewSubPath(point);
-                else
-                    triangle.lineTo(point);
-            }
-            triangle.closeSubPath();
-            graphics.strokePath(
-                triangle,
-                juce::PathStrokeType(1.1f * scale,
-                                     juce::PathStrokeType::curved,
-                                     juce::PathStrokeType::rounded));
-        };
-    drawNavigationTriangle(
-        {(float)upButton->getBounds().getCentreX(),
-         (float)upButton->getY() - 10.0f * scale},
-        -juce::MathConstants<float>::halfPi);
-    drawNavigationTriangle(
-        {(float)downButton->getBounds().getCentreX(),
-         (float)downButton->getBottom() + 10.0f * scale},
-        juce::MathConstants<float>::halfPi);
-    drawNavigationTriangle(
-        {(float)leftButton->getX() - 13.0f * scale,
-         (float)leftButton->getBounds().getCentreY()},
-        juce::MathConstants<float>::pi);
-    drawNavigationTriangle(
-        {(float)rightButton->getRight() + 13.0f * scale,
-         (float)rightButton->getBounds().getCentreY()},
-        0.0f);
-
-    graphics.setFont(8.0f * scale);
-    above(cancelButton, "NO", 13);
-    below(cancelButton, "CANCEL", 12);
-    above(enterButton, "YES", 13);
-    below(enterButton, "ENTER", 12);
-
-    auto baseRect = [this, scale, designHeight](int x, int y, int width,
-                                                int height) {
-        const int offsetX =
-            (getWidth() - juce::roundToInt(rackWidth * scale)) / 2;
-        const int offsetY =
-            (getHeight() - juce::roundToInt(
-                               static_cast<float>(designHeight) * scale)) / 2;
-        return juce::Rectangle<int>(
-            offsetX + juce::roundToInt((float)x * scale),
-            offsetY + juce::roundToInt((float)y * scale),
-            juce::roundToInt((float)width * scale),
-            juce::roundToInt((float)height * scale));
-    };
-    auto drawLegendLines = [&graphics, &baseRect](int x, int width) {
-        if (width <= 0) return;
-        graphics.fillRect(baseRect(x, 248, width, 2));
-        graphics.fillRect(baseRect(x, 252, width, 2));
-    };
-
-    graphics.setColour(accentColour);
-    drawLegendLines(0, 41);
-    drawLegendLines(89, 52);
-    drawLegendLines(181, 157);
-    drawLegendLines(376, 149);
-    drawLegendLines(595, 121);
-
-    int trackLineX = 716;
-    for (int index = 0; index < 8; ++index) {
-        const int numberCentre = 722 + index * 55;
-        drawLegendLines(trackLineX, numberCentre - 6 - trackLineX);
-        trackLineX = numberCentre + 6;
-    }
-    drawLegendLines(trackLineX, 1216 - trackLineX);
-    drawLegendLines(1286, 64);
-
-    graphics.setColour(rackLabelColour);
-    graphics.setFont(9.0f * scale);
-    graphics.drawText("VOLUME", baseRect(38, 240, 54, 20),
-                      juce::Justification::centred);
-    graphics.drawText("MODE", baseRect(133, 240, 56, 20),
-                      juce::Justification::centred);
-    graphics.drawText("PAGE", baseRect(331, 240, 51, 20),
-                      juce::Justification::centred);
-    graphics.drawText("DATA ENTRY", baseRect(513, 240, 93, 20),
-                      juce::Justification::centred);
-    for (int index = 0; index < 8; ++index)
-        graphics.drawText(juce::String(index + 1),
-                          baseRect(712 + index * 55, 240, 20, 20),
-                          juce::Justification::centred);
-    graphics.drawText("SEQUENCER", baseRect(1207, 240, 88, 20),
-                      juce::Justification::centred);
 }
 
 void Eps16PanelEditor::resized() {
@@ -1464,52 +1266,69 @@ void Eps16PanelEditor::resized() {
             juce::roundToInt((float)height * scale));
     };
 
-    vfd.setBounds(rackRect(696, 27, 444, 101));
+    // ── VFD (size locked, position centred) ──────────────────────────────
+    vfd.setBounds(rackRect(453, 62, 444, 101));
     vfd.setFont(juce::Font(juce::FontOptions("Menlo", 17.0f * scale,
                                              juce::Font::plain)));
     status.setBounds({});
-    masterVolume.setBounds(rackRect(36, 25, 76, 198));
-    dataEntry.setBounds(rackRect(452, 26, 76, 199));
 
-    const int pageX[3] = {294, 345, 396};
-    const int pageY[3] = {51, 105, 159};
+    // ── Faders (w=76, h=244; positions SWAPPED vs original) ──────────────
+    masterVolume.setBounds(rackRect(36, 62, 76, 244));    // left side
+    dataEntry.setBounds(rackRect(1158, 62, 76, 244));     // swapped right
+
+    // ── Page buttons  42×22  cols: 140/195/250  rows: 62/124/186/278 ─────
+    const int pageX[3] = {140, 195, 250};
+    const int pageY[4] = {62, 124, 186, 278};
     for (std::size_t index = 0; index < 9; ++index)
         pageButtons[index]->setBounds(
-            rackRect(pageX[index % 3], pageY[index / 3], 34, 18));
-    pageButtons[9]->setBounds(rackRect(1270, 89, 38, 18));
-    pageButtons[10]->setBounds(rackRect(345, 203, 34, 18));
-    pageButtons[11]->setBounds(rackRect(1183, 89, 38, 18));
+            rackRect(pageX[index % 3], pageY[index / 3], 42, 22));
+    pageButtons[9]->setBounds(rackRect(140, 278, 42, 22));   // SAMPLE
+    pageButtons[10]->setBounds(rackRect(195, 278, 42, 22));  // TRACK
+    pageButtons[11]->setBounds(rackRect(250, 278, 42, 22));  // EFFECT SELECT/BYPASS
 
-    modeButtons[0]->setBounds(rackRect(142, 69, 38, 18));
-    modeButtons[1]->setBounds(rackRect(142, 119, 38, 18));
-    modeButtons[2]->setBounds(rackRect(142, 169, 38, 18));
-    modeButtons[3]->setBounds(rackRect(225, 47, 38, 18));
-    modeButtons[4]->setBounds(rackRect(225, 99, 38, 18));
-    modeButtons[5]->setBounds(rackRect(225, 151, 38, 18));
-    modeButtons[6]->setBounds(rackRect(225, 203, 38, 18));
+    // ── Mode buttons  42×22  horizontal row below VFD ─────────────────────
+    modeButtons[0]->setBounds(rackRect(453, 200, 42, 22));  // LOAD   (grey sprite)
+    modeButtons[1]->setBounds(rackRect(505, 200, 42, 22));  // CMD    (grey sprite)
+    modeButtons[2]->setBounds(rackRect(557, 200, 42, 22));  // EDIT   (grey sprite)
+    modeButtons[3]->setBounds(rackRect(649, 200, 42, 22));  // INST
+    modeButtons[4]->setBounds(rackRect(701, 200, 42, 22));  // SEQ SONG
+    modeButtons[5]->setBounds(rackRect(753, 200, 42, 22));  // SYSTEM MIDI
+    modeButtons[6]->setBounds(rackRect(805, 200, 42, 22));  // EFFECTS
 
+    // ── Track buttons  48×34  centred, stride 55 ──────────────────────────
     for (std::size_t index = 0; index < trackButtons.size(); ++index)
         trackButtons[index]->setBounds(
-            rackRect(698 + (int)index * 55, 181, 48, 34));
+            rackRect(459 + (int)index * 55, 266, 48, 34));
 
-    for (std::size_t index = 0; index < sequencerButtons.size(); ++index)
-        sequencerButtons[index]->setBounds(
-            rackRect(1172 + (int)index * 52, 196, 39, 18));
-    upButton->setBounds(rackRect(589, 50, 39, 18));
-    leftButton->setBounds(rackRect(551, 84, 39, 18));
-    rightButton->setBounds(rackRect(627, 84, 39, 18));
-    downButton->setBounds(rackRect(589, 119, 39, 18));
-    cancelButton->setBounds(rackRect(552, 183, 42, 22));
-    enterButton->setBounds(rackRect(624, 183, 42, 22));
-    osDiskButton.setBounds(rackRect(1160, 27, 39, 44));
-    newDiskButton.setBounds(rackRect(1203, 27, 39, 44));
-    loadDiskButton.setBounds(rackRect(1246, 27, 39, 44));
-    saveDiskButton.setBounds(rackRect(1289, 27, 39, 44));
-    diskName.setBounds(rackRect(1160, 6, 168, 17));
+    // ── Sequencer  42×22  top-right  (grey sprite) ────────────────────────
+    sequencerButtons[0]->setBounds(rackRect(948, 22, 42, 22));   // RECORD
+    sequencerButtons[1]->setBounds(rackRect(1000, 22, 42, 22));  // STOP/CONT
+    sequencerButtons[2]->setBounds(rackRect(1052, 22, 42, 22));  // PLAY
+
+    // ── Navigation  42×22 ──────────────────────────────────────────────────
+    upButton->setBounds(rackRect(1004, 167, 42, 22));    // UP — above mode row
+    leftButton->setBounds(rackRect(960, 200, 42, 22));   // LEFT  } same row as
+    downButton->setBounds(rackRect(1004, 200, 42, 22));  // DOWN  } mode buttons
+    rightButton->setBounds(rackRect(1048, 200, 42, 22)); // RIGHT }
+
+    // ── No·Cancel / Yes·Enter  48×34  at track-button level ───────────────
+    cancelButton->setBounds(rackRect(957, 266, 48, 34));
+    enterButton->setBounds(rackRect(1045, 266, 48, 34));
+
+    // ── Disk buttons  78×62  vertical stack, SWAPPED to far right ─────────
+    // DiskButton::paintButton() remains PROCEDURAL — no sprite change.
+    osDiskButton.setBounds(rackRect(1262, 62, 78, 62));    // OS
+    newDiskButton.setBounds(rackRect(1262, 130, 78, 62));  // NEW
+    loadDiskButton.setBounds(rackRect(1262, 198, 78, 62)); // LOAD
+    saveDiskButton.setBounds(rackRect(1262, 266, 78, 62)); // SAVE
+    diskName.setBounds(rackRect(1262, 14, 168, 22));
     diskName.setFont(juce::Font(juce::FontOptions(
         "Helvetica Neue", 10.0f * scale, juce::Font::plain)));
-    keyboardToggle.setBounds(rackRect(618, 263, 114, 18));
+
+    // ── Keyboard toggle ─────────────────────────────────────────────────────
+    keyboardToggle.setBounds(rackRect(580, 358, 160, 22));
+
+    // ── Piano keyboard (expanded state) ─────────────────────────────────────
     pianoKeyboard.setBounds(rackRect(0, rackHeight, rackWidth,
                                      keyboardHeight));
-
 }

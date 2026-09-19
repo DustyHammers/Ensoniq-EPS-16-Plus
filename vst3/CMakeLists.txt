@@ -189,6 +189,14 @@ else()
   set(EPS16_PLUGIN_FORMATS VST3)
 endif()
 
+juce_add_binary_data(Eps16UIAssets SOURCES
+  Resources/panel_background.png
+  Resources/sprite_small_black.png
+  Resources/sprite_small_grey.png
+  Resources/sprite_large_black.png
+  Resources/slider_thumb.png
+)
+
 juce_add_plugin(Eps16Plus
   COMPANY_NAME "EPS-16 Plus Emulator"
   BUNDLE_ID "${EPS16_BUNDLE_ID}"
@@ -218,6 +226,7 @@ target_include_directories(Eps16Plus PRIVATE "${CMAKE_SOURCE_DIR}/native")
 target_link_libraries(Eps16Plus PRIVATE
   eps16_vst3_bridge
   eps16_probe_machine
+  Eps16UIAssets
   juce::juce_audio_processors
   juce::juce_cryptography
   juce::juce_gui_basics
