@@ -365,12 +365,16 @@ void Eps16PanelEditor::PanelButton::paintButton(juce::Graphics &graphics,
                                                 bool highlighted,
                                                 bool down) {
     if (spriteSheet.isValid()) {
-        /* Frame 0 (y=0)   = Lit   - default / released state
-           Frame 1 (y=100) = Pressed - momentary, returns to Lit on mouseUp */
-        const int frameY = (down || pressed) ? 100 : 0;
+        /* Top half (y=0)          = Lit   - default / released state
+           Bottom half (y=frameHeight) = Pressed - momentary, returns to Lit
+           on mouseUp. The sheet's total height, not a fixed pixel count,
+           determines each frame's height so trimmed sheets of any size
+           still split into exactly two frames. */
+        const int frameHeight = spriteSheet.getHeight() / 2;
+        const int frameY = (down || pressed) ? frameHeight : 0;
         graphics.drawImage(spriteSheet,
                            0, 0, getWidth(), getHeight(),
-                           0, frameY, 100, 100,
+                           0, frameY, spriteSheet.getWidth(), frameHeight,
                            false);
     } else {
         TextButton::paintButton(graphics, highlighted, down);
