@@ -1,0 +1,76 @@
+name: macOS Plugins
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - "skin-1010"
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+jobs:
+  build-macos-plugins:
+    runs-on: macos-15
+    timeout-minutes: 60
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Fetch JUCE 8.0.13
+        run: git clone --depth 1 --branch 8.0.13 https://github.com/juce-framework/JUCE.git work/deps/JUCE
+
+      - name: Fetch Musashi
+        run: |
+          git init work/deps/Musashi
+          git -C work/deps/Musashi remote add origin https://github.com/kstenerud/Musashi.git
+          git -C work/deps/Musashi fetch --depth 1 origin 313ebf1bd9f4d0d93341eb5ce21fd8a119e9dbdd
+          git -C work/deps/Musashi checkout --detach FETCH_HEAD
+
+      - name: Configure arm64 slice
+        run: |
+          cmake -S . -B work/vst3-build \
+            -DEPS16_BUILD_VST3=ON \
+            -DEPS16_JUCE_DIR="$PWD/work/deps/JUCE" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_ARCHITECTURES=arm64
+
+      - name: Build arm64 slice
+        run: cmake --build work/vst3-build -j 4
+
+      - name: Configure x86_64 slice
+        run: |
+          cmake -S . -B work/vst3-build-high-sierra \
+            -DEPS16_BUILD_VST3=ON \
+            -DEPS16_JUCE_DIR="$PWD/work/deps/JUCE" \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_OSX_ARCHITECTURES=x86_64 \
+            -DCMAKE_OSX_DEPLOYMENT_TARGET=10.13
+
+      - name: Build x86_64 slice
+        run: cmake --build work/vst3-build-high-sierra -j 4
+
+      - name: Point the arm64 build at the x86_64 bundles
+        run: |
+          cmake -S . -B work/vst3-build \
+            -DEPS16_X86_64_VST3_BUNDLE="$PWD/work/vst3-build-high-sierra/vst3/Eps16Plus_artefacts/Release/VST3/Ensoniq EPS-16 Plus.vst3" \
+            -DEPS16_X86_64_AU_BUNDLE="$PWD/work/vst3-build-high-sierra/vst3/Eps16Plus_artefacts/Release/AU/Ensoniq EPS-16 Plus.component"
+
+      - name: Create universal AU + VST3 package
+        run: cmake --build work/vst3-build --target eps16_universal_plugin_package -j 4
+
+      - name: Run tests
+        run: |
+          ctest --test-dir work/vst3-build --output-on-failure
+          ctest --test-dir work/vst3-build-high-sierra --output-on-failure
+
+      - name: Upload macOS universal package
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Ensoniq-EPS-16-Plus-macOS-universal
+          path: work/vst3-build/universal-plugin-package/Ensoniq-EPS-16-Plus-*-macOS-universal.zip
+          if-no-files-found: error
