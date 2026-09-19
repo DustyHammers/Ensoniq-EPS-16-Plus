@@ -192,21 +192,30 @@ void drawVfdCell(juce::Graphics &graphics, juce::Rectangle<float> cell,
 
 void Eps16PanelEditor::EpsFaderLookAndFeel::drawLinearSlider(
     juce::Graphics &graphics, int x, int y, int width, int height,
-    float sliderPosition, float /*minimumSliderPosition*/,
+    float /*sliderPosition*/, float /*minimumSliderPosition*/,
     float /*maximumSliderPosition*/, juce::Slider::SliderStyle style,
-    juce::Slider & /*slider*/) {
+    juce::Slider &slider) {
     juce::ignoreUnused(style);
 
-    const int trackWidth = juce::jmax(2, width / 5);
-    graphics.setColour(juce::Colour{0xff080908});
-    graphics.fillRect(x + (width - trackWidth) / 2, y, trackWidth, height);
-
+    /* The recessed fader track is baked into the panel background PNG;
+       only the thumb is drawn here. */
     if (thumbImage.isValid()) {
         const int thumbWidth = width;
         const int thumbHeight = juce::roundToInt(
             (float)thumbWidth * thumbImage.getHeight() / thumbImage.getWidth());
         const int thumbX = x;
-        const int thumbY = (int)sliderPosition - thumbHeight / 2;
+
+        const float valueProportion =
+            (float)slider.valueToProportionOfLength(slider.getValue());
+        const float travelTop = (float)y + (float)thumbHeight * 0.5f;
+        const float travelBottom =
+            (float)(y + height) - (float)thumbHeight * 0.5f;
+        const float thumbCentreY =
+            juce::jmap(valueProportion, travelBottom, travelTop);
+        const int thumbY = juce::jlimit(
+            y, y + height - thumbHeight,
+            juce::roundToInt(thumbCentreY - (float)thumbHeight * 0.5f));
+
         graphics.drawImage(thumbImage,
                            thumbX, thumbY, thumbWidth, thumbHeight,
                            0, 0, thumbImage.getWidth(),
