@@ -6,6 +6,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <array>
+#include <map>
 #include <memory>
 #include <vector>
 
@@ -131,6 +132,10 @@ private:
     void updateDiskName();
     void setKeyboardExpanded(bool expanded);
     void timerCallback() override;
+    void loadPanelImages();
+    void loadLayoutOverrides();
+    juce::Rectangle<int> designRect(const juce::String &name, int x, int y,
+                                    int width, int height) const;
 
     Eps16PlusProcessor &owner;
     VfdLabel vfd;
@@ -141,6 +146,7 @@ private:
     juce::Image spriteSmallGrey;
     juce::Image spriteLargeBlack;
     juce::Image sliderThumb;
+    std::map<juce::String, juce::Rectangle<int>> layoutOverrides;
     juce::Slider masterVolume;
     juce::Slider dataEntry;
     DiskButton osDiskButton{"Insert OS disk", "OS"};
