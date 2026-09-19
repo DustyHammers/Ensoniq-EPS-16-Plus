@@ -54,6 +54,7 @@ public:
     bool saveDisk(const juce::File &diskFile);
     bool blankDiskMounted() const;
     static juce::File defaultResourceDirectory();
+    static juce::Array<juce::File> resourceSearchDirectories();
     std::uint64_t cpuCycles() const { return bridge.cpuCycles(); }
     bool machineReady() const { return machineSink.isReady(); }
     juce::String machineStatus() const { return machineSink.status(); }

@@ -358,7 +358,7 @@ juce::File Eps16PlusProcessor::defaultResourceDirectory() {
     return bundle.getParentDirectory().getChildFile("EPS_files");
 }
 
-void Eps16PlusProcessor::refreshResourcePaths() {
+juce::Array<juce::File> Eps16PlusProcessor::resourceSearchDirectories() {
     juce::Array<juce::File> directories;
     const auto addDirectory = [&directories](const juce::File &directory) {
         if (directory.isDirectory() && !directories.contains(directory))
@@ -374,6 +374,11 @@ void Eps16PlusProcessor::refreshResourcePaths() {
                      juce::File::commonApplicationDataDirectory)
                      .getChildFile("VST3/EPS_files"));
 #endif
+    return directories;
+}
+
+void Eps16PlusProcessor::refreshResourcePaths() {
+    const auto directories = resourceSearchDirectories();
     if (directories.isEmpty()) return;
 
     auto discover = [this, &directories](
