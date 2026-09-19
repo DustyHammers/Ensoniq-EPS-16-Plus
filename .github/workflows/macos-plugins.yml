@@ -39,7 +39,7 @@ jobs:
             -DCMAKE_OSX_ARCHITECTURES=arm64
 
       - name: Build arm64 slice
-        run: cmake --build work/vst3-build --target Eps16Plus_VST3 Eps16Plus_AU -j 4
+        run: cmake --build work/vst3-build -j 4
 
       - name: Configure x86_64 slice
         run: |
@@ -51,7 +51,7 @@ jobs:
             -DCMAKE_OSX_DEPLOYMENT_TARGET=10.13
 
       - name: Build x86_64 slice
-        run: cmake --build work/vst3-build-high-sierra --target Eps16Plus_VST3 Eps16Plus_AU -j 4
+        run: cmake --build work/vst3-build-high-sierra -j 4
 
       - name: Point the arm64 build at the x86_64 bundles
         run: |
@@ -68,6 +68,7 @@ jobs:
           ctest --test-dir work/vst3-build-high-sierra --output-on-failure
 
       - name: Upload macOS universal package
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: Ensoniq-EPS-16-Plus-macOS-universal
