@@ -17,6 +17,16 @@ const juce::Colour displayColour{0xff55eaff};
 const juce::Colour displayDimColour{0xff17353a};
 const juce::Colour rackLabelColour{0xffe8e5df};
 
+/* Development-time overrides live alongside the ROM/OS files the user
+   already drops in EPS_files, found via the same search used for those. */
+juce::File findEpsFile(const juce::String &relativePath) {
+    for (const auto &directory : Eps16PlusProcessor::resourceSearchDirectories()) {
+        const auto candidate = directory.getChildFile(relativePath);
+        if (candidate.existsAsFile()) return candidate;
+    }
+    return {};
+}
+
 /* FIP 22AM5R alphanumeric cell, as labelled on the EPS-16 Plus keypad/display
    schematic: fourteen directly-driven segments SA..SN plus decimal point. */
 enum VfdSegment : std::uint16_t {
@@ -720,25 +730,89 @@ void Eps16PanelEditor::PianoKeyboard::paint(juce::Graphics &graphics) {
                       juce::Justification::centredRight);
 }
 
+void Eps16PanelEditor::loadPanelImages() {
+    /* Dev-time skinning: EPS_files/skin/<name>.png overrides the built-in
+       artwork, found via the same EPS_files search used for ROM/OS files. */
+    auto loadSkinnable = [](const char *pngName, const void *binaryData,
+                            int binarySize) {
+        const auto file = findEpsFile(juce::String("skin/") + pngName);
+        if (file.existsAsFile()) {
+            auto image = juce::ImageFileFormat::loadFrom(file);
+            if (image.isValid()) return image;
+            DBG("skin/" << pngName
+                        << ": failed to decode, using built-in artwork");
+        }
+        return juce::ImageCache::getFromMemory(binaryData, binarySize);
+    };
+    panelBackground = loadSkinnable("panel_background.png",
+                                    BinaryData::panel_background_png,
+                                    BinaryData::panel_background_pngSize);
+    spriteSmallBlack = loadSkinnable("sprite_small_black.png",
+                                     BinaryData::sprite_small_black_png,
+                                     BinaryData::sprite_small_black_pngSize);
+    spriteSmallGrey = loadSkinnable("sprite_small_grey.png",
+                                    BinaryData::sprite_small_grey_png,
+                                    BinaryData::sprite_small_grey_pngSize);
+    spriteLargeBlack = loadSkinnable("sprite_large_black.png",
+                                     BinaryData::sprite_large_black_png,
+                                     BinaryData::sprite_large_black_pngSize);
+    sliderThumb = loadSkinnable("slider_thumb.png", BinaryData::slider_thumb_png,
+                                BinaryData::slider_thumb_pngSize);
+    faderLookAndFeel.thumbImage = sliderThumb;
+}
+
+void Eps16PanelEditor::loadLayoutOverrides() {
+    /* Dev-time layout: EPS_files/panel_layout.json overrides the compiled-in
+       rackRect() coordinates below, so positions can be iterated without a
+       rebuild. Absent or malformed input always falls back safely. */
+    layoutOverrides.clear();
+    const auto file = findEpsFile("panel_layout.json");
+    if (!file.existsAsFile()) return;
+
+    juce::var parsed;
+    const auto result = juce::JSON::parse(file.loadFileAsString(), parsed);
+    if (result.failed() || !parsed.isObject()) {
+        DBG("panel_layout.json: "
+            << (result.failed() ? result.getErrorMessage()
+                                 : juce::String("root is not a JSON object"))
+            << " - using compiled-in panel layout");
+        return;
+    }
+
+    auto *object = parsed.getDynamicObject();
+    if (!object) return;
+    for (const auto &property : object->getProperties()) {
+        const auto *array = property.value.getArray();
+        const bool wellFormed = array != nullptr && array->size() == 4 &&
+            std::all_of(array->begin(), array->end(), [](const juce::var &v) {
+                return v.isInt() || v.isInt64() || v.isDouble();
+            });
+        if (!wellFormed) {
+            DBG("panel_layout.json: ignoring malformed entry \""
+                << property.name.toString() << "\"");
+            continue;
+        }
+        layoutOverrides[property.name.toString()] = juce::Rectangle<int>(
+            (int)(double)(*array)[0], (int)(double)(*array)[1],
+            (int)(double)(*array)[2], (int)(double)(*array)[3]);
+    }
+}
+
+juce::Rectangle<int> Eps16PanelEditor::designRect(const juce::String &name,
+                                                  int x, int y, int width,
+                                                  int height) const {
+    const auto found = layoutOverrides.find(name);
+    if (found != layoutOverrides.end()) return found->second;
+    return {x, y, width, height};
+}
+
 Eps16PanelEditor::Eps16PanelEditor(Eps16PlusProcessor &processorToUse)
     : AudioProcessorEditor(processorToUse), owner(processorToUse),
       pianoKeyboard(processorToUse) {
     setSize(rackWidth, rackHeight);
 
-    auto loadImg = [](const char *data, int bytes) {
-        return juce::ImageCache::getFromMemory(data, bytes);
-    };
-    panelBackground = loadImg(BinaryData::panel_background_png,
-                              BinaryData::panel_background_pngSize);
-    spriteSmallBlack = loadImg(BinaryData::sprite_small_black_png,
-                               BinaryData::sprite_small_black_pngSize);
-    spriteSmallGrey = loadImg(BinaryData::sprite_small_grey_png,
-                              BinaryData::sprite_small_grey_pngSize);
-    spriteLargeBlack = loadImg(BinaryData::sprite_large_black_png,
-                               BinaryData::sprite_large_black_pngSize);
-    sliderThumb = loadImg(BinaryData::slider_thumb_png,
-                          BinaryData::slider_thumb_pngSize);
-    faderLookAndFeel.thumbImage = sliderThumb;
+    loadPanelImages();
+    loadLayoutOverrides();
 
     setResizable(true, true);
     setResizeLimits(1080, 304, 1620, 456);
@@ -1257,78 +1331,108 @@ void Eps16PanelEditor::resized() {
     const int offsetY =
         (getHeight() - juce::roundToInt(
                            static_cast<float>(designHeight) * scale)) / 2;
-    auto rackRect = [scale, offsetX, offsetY](int x, int y,
-                                              int width, int height) {
+    auto rackRect = [scale, offsetX, offsetY](juce::Rectangle<int> design) {
         return juce::Rectangle<int>(
-            offsetX + juce::roundToInt((float)x * scale),
-            offsetY + juce::roundToInt((float)y * scale),
-            juce::roundToInt((float)width * scale),
-            juce::roundToInt((float)height * scale));
+            offsetX + juce::roundToInt((float)design.getX() * scale),
+            offsetY + juce::roundToInt((float)design.getY() * scale),
+            juce::roundToInt((float)design.getWidth() * scale),
+            juce::roundToInt((float)design.getHeight() * scale));
     };
+    /* Every control's design-space rect can be overridden by
+       EPS_files/panel_layout.json (see loadLayoutOverrides()); the literal
+       x/y/w/h below are only the compiled-in fallback. */
 
     // ── VFD (size locked, position centred) ──────────────────────────────
-    vfd.setBounds(rackRect(453, 62, 444, 101));
+    vfd.setBounds(rackRect(designRect("vfd", 453, 62, 444, 101)));
     vfd.setFont(juce::Font(juce::FontOptions("Menlo", 17.0f * scale,
                                              juce::Font::plain)));
     status.setBounds({});
 
     // ── Faders (w=76, h=244; positions SWAPPED vs original) ──────────────
-    masterVolume.setBounds(rackRect(36, 62, 76, 244));    // left side
-    dataEntry.setBounds(rackRect(1158, 62, 76, 244));     // swapped right
+    masterVolume.setBounds(
+        rackRect(designRect("masterVolume", 36, 62, 76, 244)));   // left side
+    dataEntry.setBounds(
+        rackRect(designRect("dataEntry", 1158, 62, 76, 244)));    // swapped right
 
     // ── Page buttons  42×22  cols: 140/195/250  rows: 62/124/186/278 ─────
     const int pageX[3] = {140, 195, 250};
     const int pageY[4] = {62, 124, 186, 278};
     for (std::size_t index = 0; index < 9; ++index)
-        pageButtons[index]->setBounds(
-            rackRect(pageX[index % 3], pageY[index / 3], 42, 22));
-    pageButtons[9]->setBounds(rackRect(140, 278, 42, 22));   // SAMPLE
-    pageButtons[10]->setBounds(rackRect(195, 278, 42, 22));  // TRACK
-    pageButtons[11]->setBounds(rackRect(250, 278, 42, 22));  // EFFECT SELECT/BYPASS
+        pageButtons[index]->setBounds(rackRect(designRect(
+            "pageButtons[" + juce::String((int)index) + "]",
+            pageX[index % 3], pageY[index / 3], 42, 22)));
+    pageButtons[9]->setBounds(rackRect(
+        designRect("pageButtons[9]", 140, 278, 42, 22)));   // SAMPLE
+    pageButtons[10]->setBounds(rackRect(
+        designRect("pageButtons[10]", 195, 278, 42, 22)));  // TRACK
+    pageButtons[11]->setBounds(rackRect(
+        designRect("pageButtons[11]", 250, 278, 42, 22)));  // EFFECT SELECT/BYPASS
 
     // ── Mode buttons  42×22  horizontal row below VFD ─────────────────────
-    modeButtons[0]->setBounds(rackRect(453, 200, 42, 22));  // LOAD   (grey sprite)
-    modeButtons[1]->setBounds(rackRect(505, 200, 42, 22));  // CMD    (grey sprite)
-    modeButtons[2]->setBounds(rackRect(557, 200, 42, 22));  // EDIT   (grey sprite)
-    modeButtons[3]->setBounds(rackRect(649, 200, 42, 22));  // INST
-    modeButtons[4]->setBounds(rackRect(701, 200, 42, 22));  // SEQ SONG
-    modeButtons[5]->setBounds(rackRect(753, 200, 42, 22));  // SYSTEM MIDI
-    modeButtons[6]->setBounds(rackRect(805, 200, 42, 22));  // EFFECTS
+    modeButtons[0]->setBounds(rackRect(
+        designRect("modeButtons[0]", 453, 200, 42, 22)));  // LOAD   (grey sprite)
+    modeButtons[1]->setBounds(rackRect(
+        designRect("modeButtons[1]", 505, 200, 42, 22)));  // CMD    (grey sprite)
+    modeButtons[2]->setBounds(rackRect(
+        designRect("modeButtons[2]", 557, 200, 42, 22)));  // EDIT   (grey sprite)
+    modeButtons[3]->setBounds(rackRect(
+        designRect("modeButtons[3]", 649, 200, 42, 22)));  // INST
+    modeButtons[4]->setBounds(rackRect(
+        designRect("modeButtons[4]", 701, 200, 42, 22)));  // SEQ SONG
+    modeButtons[5]->setBounds(rackRect(
+        designRect("modeButtons[5]", 753, 200, 42, 22)));  // SYSTEM MIDI
+    modeButtons[6]->setBounds(rackRect(
+        designRect("modeButtons[6]", 805, 200, 42, 22)));  // EFFECTS
 
     // ── Track buttons  48×34  centred, stride 55 ──────────────────────────
     for (std::size_t index = 0; index < trackButtons.size(); ++index)
-        trackButtons[index]->setBounds(
-            rackRect(459 + (int)index * 55, 266, 48, 34));
+        trackButtons[index]->setBounds(rackRect(designRect(
+            "trackButtons[" + juce::String((int)index) + "]",
+            459 + (int)index * 55, 266, 48, 34)));
 
     // ── Sequencer  42×22  top-right  (grey sprite) ────────────────────────
-    sequencerButtons[0]->setBounds(rackRect(948, 22, 42, 22));   // RECORD
-    sequencerButtons[1]->setBounds(rackRect(1000, 22, 42, 22));  // STOP/CONT
-    sequencerButtons[2]->setBounds(rackRect(1052, 22, 42, 22));  // PLAY
+    sequencerButtons[0]->setBounds(rackRect(
+        designRect("sequencerButtons[0]", 948, 22, 42, 22)));   // RECORD
+    sequencerButtons[1]->setBounds(rackRect(
+        designRect("sequencerButtons[1]", 1000, 22, 42, 22)));  // STOP/CONT
+    sequencerButtons[2]->setBounds(rackRect(
+        designRect("sequencerButtons[2]", 1052, 22, 42, 22)));  // PLAY
 
     // ── Navigation  42×22 ──────────────────────────────────────────────────
-    upButton->setBounds(rackRect(1004, 167, 42, 22));    // UP — above mode row
-    leftButton->setBounds(rackRect(960, 200, 42, 22));   // LEFT  } same row as
-    downButton->setBounds(rackRect(1004, 200, 42, 22));  // DOWN  } mode buttons
-    rightButton->setBounds(rackRect(1048, 200, 42, 22)); // RIGHT }
+    upButton->setBounds(rackRect(
+        designRect("upButton", 1004, 167, 42, 22)));    // UP — above mode row
+    leftButton->setBounds(rackRect(
+        designRect("leftButton", 960, 200, 42, 22)));   // LEFT  } same row as
+    downButton->setBounds(rackRect(
+        designRect("downButton", 1004, 200, 42, 22)));  // DOWN  } mode buttons
+    rightButton->setBounds(rackRect(
+        designRect("rightButton", 1048, 200, 42, 22))); // RIGHT }
 
     // ── No·Cancel / Yes·Enter  48×34  at track-button level ───────────────
-    cancelButton->setBounds(rackRect(957, 266, 48, 34));
-    enterButton->setBounds(rackRect(1045, 266, 48, 34));
+    cancelButton->setBounds(rackRect(
+        designRect("cancelButton", 957, 266, 48, 34)));
+    enterButton->setBounds(rackRect(
+        designRect("enterButton", 1045, 266, 48, 34)));
 
     // ── Disk buttons  78×62  vertical stack, SWAPPED to far right ─────────
     // DiskButton::paintButton() remains PROCEDURAL — no sprite change.
-    osDiskButton.setBounds(rackRect(1262, 62, 78, 62));    // OS
-    newDiskButton.setBounds(rackRect(1262, 130, 78, 62));  // NEW
-    loadDiskButton.setBounds(rackRect(1262, 198, 78, 62)); // LOAD
-    saveDiskButton.setBounds(rackRect(1262, 266, 78, 62)); // SAVE
-    diskName.setBounds(rackRect(1262, 14, 168, 22));
+    osDiskButton.setBounds(rackRect(
+        designRect("osDiskButton", 1262, 62, 78, 62)));    // OS
+    newDiskButton.setBounds(rackRect(
+        designRect("newDiskButton", 1262, 130, 78, 62)));  // NEW
+    loadDiskButton.setBounds(rackRect(
+        designRect("loadDiskButton", 1262, 198, 78, 62))); // LOAD
+    saveDiskButton.setBounds(rackRect(
+        designRect("saveDiskButton", 1262, 266, 78, 62))); // SAVE
+    diskName.setBounds(rackRect(designRect("diskName", 1262, 14, 168, 22)));
     diskName.setFont(juce::Font(juce::FontOptions(
         "Helvetica Neue", 10.0f * scale, juce::Font::plain)));
 
     // ── Keyboard toggle ─────────────────────────────────────────────────────
-    keyboardToggle.setBounds(rackRect(580, 358, 160, 22));
+    keyboardToggle.setBounds(
+        rackRect(designRect("keyboardToggle", 580, 358, 160, 22)));
 
     // ── Piano keyboard (expanded state) ─────────────────────────────────────
-    pianoKeyboard.setBounds(rackRect(0, rackHeight, rackWidth,
-                                     keyboardHeight));
+    pianoKeyboard.setBounds(rackRect(designRect(
+        "pianoKeyboard", 0, rackHeight, rackWidth, keyboardHeight)));
 }
