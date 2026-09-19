@@ -202,11 +202,13 @@ void Eps16PanelEditor::EpsFaderLookAndFeel::drawLinearSlider(
     graphics.fillRect(x + (width - trackWidth) / 2, y, trackWidth, height);
 
     if (thumbImage.isValid()) {
-        const int thumbSize = juce::jmin(width, height / 4);
-        const int thumbX = x + (width - thumbSize) / 2;
-        const int thumbY = (int)sliderPosition - thumbSize / 2;
+        const int thumbWidth = width;
+        const int thumbHeight = juce::roundToInt(
+            (float)thumbWidth * thumbImage.getHeight() / thumbImage.getWidth());
+        const int thumbX = x;
+        const int thumbY = (int)sliderPosition - thumbHeight / 2;
         graphics.drawImage(thumbImage,
-                           thumbX, thumbY, thumbSize, thumbSize,
+                           thumbX, thumbY, thumbWidth, thumbHeight,
                            0, 0, thumbImage.getWidth(),
                            thumbImage.getHeight(), false);
     }
