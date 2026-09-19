@@ -29,6 +29,7 @@ private:
                               float maximumSliderPosition,
                               juce::Slider::SliderStyle,
                               juce::Slider &) override;
+        juce::Image thumbImage;
     };
 
     class VfdLabel final : public juce::Label {
@@ -50,9 +51,12 @@ private:
 
     class PanelButton final : public juce::TextButton {
     public:
+        enum class Style { SmallBlack, SmallGrey, LargeBlack };
+
         PanelButton(Eps16PlusProcessor &, juce::String label,
                     std::uint8_t rawCode, bool mappingKnown = true);
         void setShiftChordCode(std::uint8_t rawCode);
+        void setSprite(const juce::Image &sheet, Style style);
         void triggerShortcut();
         void showActivationGlow();
         void updateActivationGlow(double nowMs);
@@ -71,6 +75,8 @@ private:
         bool pressed{};
         bool shiftChordPressed{};
         double activationGlowStartedMs{-1.0};
+        juce::Image spriteSheet;
+        Style buttonStyle{Style::SmallBlack};
     };
 
     class DiskButton final : public juce::Button {
@@ -130,6 +136,11 @@ private:
     VfdLabel vfd;
     juce::Label status;
     EpsFaderLookAndFeel faderLookAndFeel;
+    juce::Image panelBackground;
+    juce::Image spriteSmallBlack;
+    juce::Image spriteSmallGrey;
+    juce::Image spriteLargeBlack;
+    juce::Image sliderThumb;
     juce::Slider masterVolume;
     juce::Slider dataEntry;
     DiskButton osDiskButton{"Insert OS disk", "OS"};
