@@ -123,7 +123,7 @@ int main(int argc, char **argv) {
         testRomPath)
         return 1;
     std::unique_ptr<juce::AudioProcessorEditor> editor(processor.createEditor());
-    if (!editor || editor->getWidth() != 1350 || editor->getHeight() != 285)
+    if (!editor || editor->getWidth() != 1350 || editor->getHeight() != 380)
         return 1;
     auto *vfd = dynamic_cast<juce::Label *>(
         editor->findChildWithID("vfd-display"));
@@ -149,7 +149,7 @@ int main(int argc, char **argv) {
         pianoKeyboard->isVisible())
         return 21;
     keyboardToggle->onClick();
-    if (editor->getWidth() != 1350 || editor->getHeight() != 500 ||
+    if (editor->getWidth() != 1350 || editor->getHeight() != 595 ||
         !pianoKeyboard->isVisible() || pianoKeyboard->getBounds().isEmpty() ||
         pitchWheel->getBounds().isEmpty() || modWheel->getBounds().isEmpty() ||
         pitchWheel->getValue() != 8192.0 || modWheel->getValue() != 0.0)
@@ -160,7 +160,7 @@ int main(int argc, char **argv) {
     if (pitchWheel->getValue() != 8192.0 || modWheel->getValue() != 16383.0)
         return 24;
     keyboardToggle->onClick();
-    if (editor->getWidth() != 1350 || editor->getHeight() != 285 ||
+    if (editor->getWidth() != 1350 || editor->getHeight() != 380 ||
         pianoKeyboard->isVisible() || pitchWheel->getValue() != 8192.0 ||
         modWheel->getValue() != 16383.0)
         return 23;
