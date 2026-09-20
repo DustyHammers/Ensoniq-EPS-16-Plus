@@ -1291,17 +1291,21 @@ void Eps16PanelEditor::timerCallback() {
 }
 
 void Eps16PanelEditor::paint(juce::Graphics &graphics) {
-    // Scale pre-rendered background PNG to component bounds
+    /* The panel is authored at rackWidth wide; scale from width alone so
+       expanding the keyboard (which only changes the editor's total height)
+       never rescales the panel itself. The panel occupies the top
+       rackHeight * scale pixels; the keyboard, when shown, occupies the
+       remainder below. */
+    const float scale = (float)getWidth() / (float)rackWidth;
+    const int panelHeight = juce::roundToInt((float)rackHeight * scale);
+
+    // Scale pre-rendered background PNG into the panel area only.
     graphics.drawImage(panelBackground,
-                       0, 0, getWidth(), getHeight(),
+                       0, 0, getWidth(), panelHeight,
                        0, 0,
                        panelBackground.getWidth(),
                        panelBackground.getHeight());
     if (pageButtons.front() == nullptr) return;
-    const int designHeight = keyboardExpanded ? expandedRackHeight : rackHeight;
-    const float scale = juce::jmin(
-        (float)getWidth() / rackWidth,
-        (float)getHeight() / static_cast<float>(designHeight));
 
     // Track LED drawing — dynamic emulator state, not baked into the
     // background PNG.
@@ -1338,18 +1342,14 @@ void Eps16PanelEditor::paint(juce::Graphics &graphics) {
 
 void Eps16PanelEditor::resized() {
     if (pageButtons.front() == nullptr) return;
-    const int designHeight = keyboardExpanded ? expandedRackHeight : rackHeight;
-    const float scale = juce::jmin(
-        (float)getWidth() / rackWidth,
-        (float)getHeight() / static_cast<float>(designHeight));
-    const int offsetX = (getWidth() - juce::roundToInt(rackWidth * scale)) / 2;
-    const int offsetY =
-        (getHeight() - juce::roundToInt(
-                           static_cast<float>(designHeight) * scale)) / 2;
-    auto rackRect = [scale, offsetX, offsetY](juce::Rectangle<int> design) {
+    /* Width-only scale (see paint()): the panel is pinned to the top-left
+       and always exactly fills the editor's width, so no centring offset
+       is needed. */
+    const float scale = (float)getWidth() / (float)rackWidth;
+    auto rackRect = [scale](juce::Rectangle<int> design) {
         return juce::Rectangle<int>(
-            offsetX + juce::roundToInt((float)design.getX() * scale),
-            offsetY + juce::roundToInt((float)design.getY() * scale),
+            juce::roundToInt((float)design.getX() * scale),
+            juce::roundToInt((float)design.getY() * scale),
             juce::roundToInt((float)design.getWidth() * scale),
             juce::roundToInt((float)design.getHeight() * scale));
     };
