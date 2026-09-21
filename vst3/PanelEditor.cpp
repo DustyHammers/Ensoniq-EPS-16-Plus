@@ -373,37 +373,30 @@ void Eps16PanelEditor::PanelButton::updateActivationGlow(double nowMs) {
 }
 
 void Eps16PanelEditor::PanelButton::paintButton(juce::Graphics &graphics,
-                                                bool highlighted,
+                                                bool /*highlighted*/,
                                                 bool down) {
-    if (spriteSheet.isValid()) {
-        /* Top half (y=0)          = Lit   - default / released state
-           Bottom half (y=frameHeight) = Pressed - momentary, returns to Lit
-           on mouseUp. The sheet's total height, not a fixed pixel count,
-           determines each frame's height so trimmed sheets of any size
-           still split into exactly two frames. */
-        const int frameHeight = spriteSheet.getHeight() / 2;
-        const int frameY = (down || pressed) ? frameHeight : 0;
-        graphics.drawImage(spriteSheet,
-                           0, 0, getWidth(), getHeight(),
-                           0, frameY, spriteSheet.getWidth(), frameHeight,
-                           false);
-    } else {
-        TextButton::paintButton(graphics, highlighted, down);
-    }
-    if (activationGlowStartedMs < 0.0) return;
+    if (!spriteSheet.isValid()) return;
+    /* Top half (y=0)              = normal / released state
+       Bottom half (y=frameHeight) = pressed
+       The sheet's total height, not a fixed pixel count, determines each
+       frame's height so trimmed sheets of any size still split into
+       exactly two frames.
 
-    static constexpr double durationMs = 260.0;
-    const auto elapsed = juce::Time::getMillisecondCounterHiRes() -
-                         activationGlowStartedMs;
-    const auto amount = static_cast<float>(juce::jlimit(
-        0.0, 1.0, 1.0 - elapsed / durationMs));
-    const auto bounds = getLocalBounds().toFloat();
-    graphics.setColour(displayColour.withAlpha(0.12f * amount));
-    graphics.drawRoundedRectangle(bounds.reduced(1.0f), 7.0f, 5.0f);
-    graphics.setColour(displayColour.withAlpha(0.28f * amount));
-    graphics.drawRoundedRectangle(bounds.reduced(2.0f), 6.0f, 2.8f);
-    graphics.setColour(displayColour.withAlpha(0.72f * amount));
-    graphics.drawRoundedRectangle(bounds.reduced(3.0f), 5.0f, 1.2f);
+       Keyboard shortcuts and programmatic presses (triggerShortcut(),
+       arrow-key handling) enqueue their press and release immediately, so
+       without help they would show no visual feedback at all. The
+       existing 260ms activationGlowStartedMs timer (see startActivationGlow
+       / updateActivationGlow) now holds the pressed frame for that
+       duration instead of drawing a fading glow. A held mouse press shows
+       the pressed frame for as long as it is held, via pressed/down. */
+    const int frameHeight = spriteSheet.getHeight() / 2;
+    const bool showPressed =
+        down || pressed || activationGlowStartedMs >= 0.0;
+    const int frameY = showPressed ? frameHeight : 0;
+    graphics.drawImage(spriteSheet,
+                       0, 0, getWidth(), getHeight(),
+                       0, frameY, spriteSheet.getWidth(), frameHeight,
+                       false);
 }
 
 void Eps16PanelEditor::PanelButton::triggerShortcut() {
@@ -774,6 +767,8 @@ void Eps16PanelEditor::loadPanelImages() {
     sliderThumb = loadSkinnable("slider_thumb.png", BinaryData::slider_thumb_png,
                                 BinaryData::slider_thumb_pngSize);
     faderLookAndFeel.thumbImage = sliderThumb;
+    trackLedSprite = loadSkinnable("track_led.png", BinaryData::track_led_png,
+                                   BinaryData::track_led_pngSize);
 }
 
 void Eps16PanelEditor::loadLayoutOverrides() {
@@ -1308,35 +1303,39 @@ void Eps16PanelEditor::paint(juce::Graphics &graphics) {
     if (pageButtons.front() == nullptr) return;
 
     // Track LED drawing — dynamic emulator state, not baked into the
-    // background PNG.
-    const auto ledPhase = [this](unsigned int bit) {
-        const auto mask = (std::uint16_t)(UINT16_C(1) << bit);
-        return (trackLedOn & mask) &&
-               (!(trackLedFlash & mask) || trackLedFlashPhase);
-    };
-    const auto loadedColour = juce::Colour(0xffdc8732);
-    const auto selectedColour = juce::Colour(0xffffd84b);
-    const auto unlitColour = juce::Colour(0xff252725);
-    for (unsigned int index = 0; index < trackButtons.size(); ++index) {
-        const auto button = trackButtons[index]->getBounds();
-        const int ledWidth = juce::roundToInt(17.0f * scale);
-        const int ledHeight = juce::jmax(2, juce::roundToInt(4.0f * scale));
-        const int ledX = button.getCentreX() - ledWidth / 2;
-        const int loadedY = button.getY() - juce::roundToInt(20.0f * scale);
-        const int selectedY = button.getY() - juce::roundToInt(11.0f * scale);
-        auto drawLed = [&graphics, unlitColour](juce::Rectangle<int> area,
-                                                juce::Colour colour,
-                                                bool lit) {
-            graphics.setColour(lit ? colour.withAlpha(0.20f) : unlitColour);
-            if (lit) graphics.fillRoundedRectangle(area.expanded(3).toFloat(),
-                                                    2.0f);
-            graphics.setColour(lit ? colour : unlitColour);
-            graphics.fillRoundedRectangle(area.toFloat(), 1.0f);
-        };
-        drawLed({ledX, loadedY, ledWidth, ledHeight}, loadedColour,
-                ledPhase(index));
-        drawLed({ledX, selectedY, ledWidth, ledHeight}, selectedColour,
-                ledPhase(index + 8));
+    // background PNG. track_led.png is three vertically stacked frames of
+    // equal height: 0 = unlit, 1 = orange (loaded), 2 = yellow (selected).
+    if (trackLedSprite.isValid()) {
+        const int frameHeight = trackLedSprite.getHeight() / 3;
+        for (unsigned int index = 0; index < trackButtons.size(); ++index) {
+            const bool loadedOn =
+                (trackLedOn & (std::uint16_t)(UINT16_C(1) << index)) != 0;
+            const bool selectedOn =
+                (trackLedOn &
+                 (std::uint16_t)(UINT16_C(1) << (index + 8))) != 0;
+            // Yellow (selected) takes priority over orange (loaded).
+            int frame = 0;
+            bool flashing = false;
+            if (selectedOn) {
+                frame = 2;
+                flashing = (trackLedFlash &
+                           (std::uint16_t)(UINT16_C(1) << (index + 8))) != 0;
+            } else if (loadedOn) {
+                frame = 1;
+                flashing = (trackLedFlash &
+                           (std::uint16_t)(UINT16_C(1) << index)) != 0;
+            }
+            const bool showChosenFrame =
+                frame != 0 && (!flashing || trackLedFlashPhase);
+            const int drawnFrame = showChosenFrame ? frame : 0;
+            const auto &area = trackLedBounds[index];
+            graphics.drawImage(trackLedSprite,
+                               area.getX(), area.getY(),
+                               area.getWidth(), area.getHeight(),
+                               0, drawnFrame * frameHeight,
+                               trackLedSprite.getWidth(), frameHeight,
+                               false);
+        }
     }
 }
 
@@ -1400,10 +1399,21 @@ void Eps16PanelEditor::resized() {
         designRect("modeButtons[6]", 805, 200, 42, 22)));  // EFFECTS
 
     // ── Track buttons  48×34  centred, stride 55 ──────────────────────────
-    for (std::size_t index = 0; index < trackButtons.size(); ++index)
-        trackButtons[index]->setBounds(rackRect(designRect(
+    // ── Track LEDs  16×16  one per track, sprite frame swap ──────────────
+    for (std::size_t index = 0; index < trackButtons.size(); ++index) {
+        const auto trackButtonDesign = designRect(
             "trackButtons[" + juce::String((int)index) + "]",
-            459 + (int)index * 55, 266, 48, 34)));
+            459 + (int)index * 55, 266, 48, 34);
+        trackButtons[index]->setBounds(rackRect(trackButtonDesign));
+
+        // Default: centred horizontally on the track button, vertically
+        // centred 18 design units above the button's top edge.
+        const int ledDefaultX = trackButtonDesign.getCentreX() - 8;
+        const int ledDefaultY = trackButtonDesign.getY() - 18 - 8;
+        trackLedBounds[index] = rackRect(designRect(
+            "trackLeds[" + juce::String((int)index) + "]",
+            ledDefaultX, ledDefaultY, 16, 16));
+    }
 
     // ── Sequencer  42×22  top-right  (grey sprite) ────────────────────────
     sequencerButtons[0]->setBounds(rackRect(

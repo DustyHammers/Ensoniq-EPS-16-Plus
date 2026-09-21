@@ -146,6 +146,7 @@ private:
     juce::Image spriteSmallGrey;
     juce::Image spriteLargeBlack;
     juce::Image sliderThumb;
+    juce::Image trackLedSprite;
     std::map<juce::String, juce::Rectangle<int>> layoutOverrides;
     juce::Slider masterVolume;
     juce::Slider dataEntry;
@@ -166,6 +167,7 @@ private:
     std::uint16_t trackLedOn{};
     std::uint16_t trackLedFlash{};
     bool trackLedFlashPhase{};
+    std::array<juce::Rectangle<int>, 8> trackLedBounds{};
     std::array<PanelButton *, 3> sequencerButtons{};
     PanelButton *upButton{};
     PanelButton *downButton{};
