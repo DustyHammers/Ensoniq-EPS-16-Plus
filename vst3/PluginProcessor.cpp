@@ -234,6 +234,10 @@ void Eps16PlusProcessor::processBlock(juce::AudioBuffer<float> &buffer,
     const bool anyOexBusEnabled = bus2Output.getNumChannels() > 0 ||
                                   bus3Output.getNumChannels() > 0 ||
                                   aux1Output.getNumChannels() > 0;
+    // The output stage's Bus 2/Bus 3/Aux conversion only differs from
+    // Main's when no expander is present; keep it in step with the same
+    // host bus state this fold-down already uses, every block.
+    machineSink.setOexPresent(anyOexBusEnabled);
     float *bus2Left = nullptr;
     float *bus2Right = nullptr;
     float *bus3Left = nullptr;

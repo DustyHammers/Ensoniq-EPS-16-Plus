@@ -72,7 +72,13 @@ int main(int argc, char **argv) {
             restoredPeak, std::max(audio.getMagnitude(0, 0, 512),
                                    audio.getMagnitude(1, 0, 512)));
     }
-    if (restoredPeak != 0.0f) {
+    // The output stage defaults on and models a TDA1541A's own noise floor
+    // (104 dB S/N typ at full scale), which real hardware has too - so a
+    // held-note check here must tolerate it rather than demand bit-exact
+    // digital silence. That noise floor is several orders of magnitude
+    // below this threshold; a real held note is several orders above it.
+    constexpr float heldNoteThreshold = 0.001f;
+    if (restoredPeak >= heldNoteThreshold) {
         std::cerr << "restored preset emitted held-note audio: "
                   << restoredPeak << '\n';
         return 1;

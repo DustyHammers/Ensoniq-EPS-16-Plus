@@ -78,6 +78,15 @@ public:
                        std::size_t size);
     bool restoreState(const void *data, std::size_t size);
     bool applyDefaultMidiInMode();
+    /* The seam for a later user-facing switch: wiring one in is exactly a
+       call here (defaults to on; see ProbeMachine.h). */
+    bool setOutputStageEnabled(bool enabled);
+    [[nodiscard]] bool outputStageEnabled() const;
+    /* Refreshed every block from the host's own OEX bus state (see
+       Eps16PlusProcessor::processBlock()); only consulted by the output
+       stage above. See eps16_probe_machine_set_oex_present()'s doc
+       comment for why. */
+    bool setOexPresent(bool present);
     [[nodiscard]] std::uint64_t cyclesSinceBoot() const {
         return bootCycleCount;
     }
@@ -108,6 +117,12 @@ private:
     std::uint64_t cycleBase{};
     std::uint64_t bootCycleCount{};
     std::array<BandlimitedResampler, 4> resamplers;
+    /* Kept alongside `resamplers`, never in place of it: with the output
+       stage enabled, runUntil()/audioOutput() push and pull through this
+       8x-configured set instead, so bypass (the flag off) always finds
+       `resamplers` exactly as it was before the output stage existed. */
+    std::array<BandlimitedResampler8x, 4> resamplers8x;
+    bool outputStageActive{};
     bool trackOutputDebugPending{};
     std::uint64_t trackOutputDebugFrames{};
     std::array<float, 4> trackOutputDebugPeaks{};

@@ -147,6 +147,15 @@ add_executable(eps16_m68hc11_core_test
 )
 target_include_directories(eps16_m68hc11_core_test PRIVATE native)
 
+add_executable(eps16_output_stage_test
+  native/output_stage.c
+  native/output_stage_test.c
+)
+target_include_directories(eps16_output_stage_test PRIVATE native)
+if(NOT MSVC)
+  target_link_libraries(eps16_output_stage_test PRIVATE m)
+endif()
+
 enable_testing()
 add_test(NAME cpu_smoke COMMAND eps16_cpu_smoke)
 add_test(NAME es5505_core COMMAND eps16_es5505_core_test)
@@ -154,6 +163,7 @@ add_test(NAME es5510_core COMMAND eps16_es5510_core_test)
 add_test(NAME sampling_input_circuit COMMAND eps16_sampling_input_circuit_test)
 add_test(NAME hfe_roundtrip COMMAND eps16_hfe_roundtrip_test)
 add_test(NAME m68hc11_core COMMAND eps16_m68hc11_core_test)
+add_test(NAME output_stage COMMAND eps16_output_stage_test)
 
 if(EPS16_BUILD_VST3)
   add_subdirectory(vst3)

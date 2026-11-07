@@ -1,5 +1,6 @@
 #include "ProbeMachine.h"
 #include "HostInputResampler.h"
+#include "output_stage.h"
 
 #include <string.h>
 
@@ -28,7 +29,10 @@ static void plugin_capture_keyon(unsigned int voice);
 #include <math.h>
 #include <stdio.h>
 
-enum { PLUGIN_AUDIO_QUEUE_CAPACITY = 1024 };
+/* 8x when the output stage is enabled, since plugin_render_audio() then
+   queues EPS16_OUTPUT_STAGE_OVERSAMPLE frames per native-rate sample
+   instead of one; keep the same margin either way. */
+enum { PLUGIN_AUDIO_QUEUE_CAPACITY = 1024 * EPS16_OUTPUT_STAGE_OVERSAMPLE };
 
 typedef struct {
     int initialized;
@@ -54,6 +58,8 @@ typedef struct {
     unsigned int restored_quiet_frames;
     int restored_output_suppressed;
     int track_debug_pending;
+    Eps16OutputStageState output_stage;
+    int oex_present;
 } PluginRuntimeState;
 
 struct Eps16ProbeMachine {
@@ -102,6 +108,8 @@ static EPS16_THREAD_LOCAL Eps16ProbeMachine *plugin_current_machine;
     (plugin_current_machine->plugin.restored_output_suppressed)
 #define plugin_track_debug_pending \
     (plugin_current_machine->plugin.track_debug_pending)
+#define plugin_output_stage (plugin_current_machine->plugin.output_stage)
+#define plugin_oex_present (plugin_current_machine->plugin.oex_present)
 
 static void plugin_capture_display(const char display[23], uint32_t decimal_mask,
                                    int cursor_start, int cursor_end,
@@ -245,6 +253,14 @@ static void plugin_track_debug_log(const char *event) {
 #define PLUGIN_SNAPSHOT_V8_FIELDS(X) \
     X(duart_rx_a_enabled)
 
+/* The output stage's per-channel filter state, previous-segment tracking
+   and noise counter, so a restore continues the analog filter and the
+   deterministic noise sequence exactly where the snapshot left them
+   instead of snapping them to silence. The fixed per-channel LSB tables
+   are reproducible build-time constants, not state, and are not here. */
+#define PLUGIN_SNAPSHOT_V9_FIELDS(X) \
+    X(plugin_output_stage)
+
 Eps16ProbeMachine *eps16_probe_machine_create(void) {
     Eps16ProbeMachine *machine = calloc(1, sizeof(*machine));
     if (!machine) return NULL;
@@ -253,6 +269,16 @@ Eps16ProbeMachine *eps16_probe_machine_create(void) {
     machine->plugin.published_display[22] = '\0';
     machine->plugin.published_cursor_start = -1;
     machine->plugin.published_cursor_end = -1;
+    /* Defaults on; see eps16_output_stage_set_enabled()'s doc comment for
+       how a later user-facing switch would change this. A reset/reinit
+       of an already-created machine (plugin_initialize_loaded_rom()) only
+       clears continuity state, never this choice. */
+    machine->plugin.output_stage.enabled = 1;
+    eps16_output_stage_reset(&machine->plugin.output_stage);
+    /* Expander present until told otherwise; the processor refreshes this
+       every block from the host's own OEX bus state (see
+       Eps16PlusProcessor::processBlock()'s anyOexBusEnabled). */
+    machine->plugin.oex_present = 1;
     return machine;
 }
 
@@ -449,24 +475,93 @@ static void plugin_render_audio(uint64_t elapsed_cycles, uint64_t end_cycle) {
             output_magnitude = visible_output_right < 0
                 ? -visible_output_right : visible_output_right;
             if (output_magnitude > audio_peak) audio_peak = output_magnitude;
-            plugin_output_left =
-                (float)audio_to_pcm16(visible_output_left) / 32768.0f;
-            plugin_output_right =
-                (float)audio_to_pcm16(visible_output_right) / 32768.0f;
-            const float outputs[8] = {
-                plugin_output_left,
-                plugin_output_right,
-                /* EPS Bus 2 is ES5505 raw bus 3. */
-                (float)audio_to_pcm16(buses[4][frame]) / 32768.0f,
-                (float)audio_to_pcm16(buses[5][frame]) / 32768.0f,
-                /* EPS Bus 3 is ES5505 raw bus 4. */
-                (float)audio_to_pcm16(buses[6][frame]) / 32768.0f,
-                (float)audio_to_pcm16(buses[7][frame]) / 32768.0f,
-                /* EPS Aux 1 is ES5505 raw bus 2. */
-                (float)audio_to_pcm16(buses[2][frame]) / 32768.0f,
-                (float)audio_to_pcm16(buses[3][frame]) / 32768.0f
+            /* Channel order matches the DAC that renders it: 0/1 Main L/R
+               (main board U48), 2/3 Bus 2 L/R (OEX-6 U8, raw ES5505 bus 3),
+               4/5 Bus 3 L/R (OEX-6 U11, raw bus 4), 6/7 Aux L/R (OEX-6 U5,
+               raw bus 2). output_stage.h documents this same mapping. */
+            const int16_t pcm[8] = {
+                audio_to_pcm16(visible_output_left),
+                audio_to_pcm16(visible_output_right),
+                audio_to_pcm16(buses[4][frame]),
+                audio_to_pcm16(buses[5][frame]),
+                audio_to_pcm16(buses[6][frame]),
+                audio_to_pcm16(buses[7][frame]),
+                audio_to_pcm16(buses[2][frame]),
+                audio_to_pcm16(buses[3][frame])
             };
-            plugin_queue_audio(frame_cycle, output_divider, outputs);
+            if (!eps16_output_stage_is_enabled(&plugin_output_stage)) {
+                /* Bit-identical to the pre-output-stage conversion: the 1x
+                   BandlimitedResampler path, no converter model, no hold,
+                   no filter. */
+                const float outputs[8] = {
+                    (float)pcm[0] / 32768.0f, (float)pcm[1] / 32768.0f,
+                    (float)pcm[2] / 32768.0f, (float)pcm[3] / 32768.0f,
+                    (float)pcm[4] / 32768.0f, (float)pcm[5] / 32768.0f,
+                    (float)pcm[6] / 32768.0f, (float)pcm[7] / 32768.0f
+                };
+                plugin_output_left = outputs[0];
+                plugin_output_right = outputs[1];
+                plugin_queue_audio(frame_cycle, output_divider, outputs);
+            } else {
+                /* Without an expander, Bus 2/Bus 3/Aux have no DAC of
+                   their own: OTTO routes those voices to the main pair
+                   digitally, ahead of any converter. Fold them into
+                   Main's conversion input here, before it runs, and
+                   leave their own channels at true digital silence - not
+                   just a silent PCM code run through their own converter,
+                   which would still add that converter's own self-noise.
+                   The processor's existing float-domain fold-down (which
+                   runs after this, once per block on the resampled
+                   signal) still adds those six channels into Main
+                   whenever the host has none of their buses enabled; with
+                   no expander that is now adding exact silence, so
+                   nothing is double-counted. */
+                const int oex_present = plugin_oex_present;
+                const int32_t main_left = visible_output_left +
+                    (oex_present ? 0
+                                : buses[4][frame] + buses[6][frame] +
+                                      buses[2][frame]);
+                const int32_t main_right = visible_output_right +
+                    (oex_present ? 0
+                                : buses[5][frame] + buses[7][frame] +
+                                      buses[3][frame]);
+                const int16_t output_stage_pcm[8] = {
+                    audio_to_pcm16(main_left), audio_to_pcm16(main_right),
+                    pcm[2], pcm[3], pcm[4], pcm[5], pcm[6], pcm[7]
+                };
+                const uint32_t native_rate_hz =
+                    es5505_core_output_rate(&es5505, CPU_CLOCK_RATE);
+                float oversampled[8][EPS16_OUTPUT_STAGE_OVERSAMPLE];
+                for (unsigned int channel = 0; channel < 8; ++channel) {
+                    if (!oex_present && channel >= 2) {
+                        for (unsigned int k = 0;
+                             k < EPS16_OUTPUT_STAGE_OVERSAMPLE; ++k)
+                            oversampled[channel][k] = 0.0f;
+                        continue;
+                    }
+                    eps16_output_stage_process(&plugin_output_stage, channel,
+                                               output_stage_pcm[channel],
+                                               native_rate_hz,
+                                               oversampled[channel]);
+                }
+                plugin_output_left =
+                    oversampled[0][EPS16_OUTPUT_STAGE_OVERSAMPLE - 1];
+                plugin_output_right =
+                    oversampled[1][EPS16_OUTPUT_STAGE_OVERSAMPLE - 1];
+                const uint32_t sub_divider =
+                    output_divider / EPS16_OUTPUT_STAGE_OVERSAMPLE;
+                for (unsigned int k = 0; k < EPS16_OUTPUT_STAGE_OVERSAMPLE;
+                     ++k) {
+                    const float outputs[8] = {
+                        oversampled[0][k], oversampled[1][k],
+                        oversampled[2][k], oversampled[3][k],
+                        oversampled[4][k], oversampled[5][k],
+                        oversampled[6][k], oversampled[7][k]
+                    };
+                    plugin_queue_audio(frame_cycle + k * sub_divider,
+                                       sub_divider, outputs);
+                }
+            }
             frame_cycle += output_divider;
         }
     }
@@ -508,6 +603,13 @@ static int plugin_initialize_loaded_rom(const char *kpc_path,
     m68k_set_instr_hook_callback(instruction_hook);
     m68k_pulse_reset();
     plugin_initialized = 1;
+    /* A reset/reinit is a real hardware reset: the analog filter and the
+       converter's noise phase go quiet, same as on real hardware. Does
+       not touch `enabled` - that default is set once, at machine
+       creation, not re-asserted on every reinit (e.g. a sample-rate
+       change), so a session's choice (once this is user-facing) survives
+       it. */
+    eps16_output_stage_reset(&plugin_output_stage);
     if (error && error_size) error[0] = '\0';
     return 1;
 }
@@ -995,6 +1097,26 @@ void eps16_probe_machine_default_midi_in_mode(void) {
     low_ram[0x0203] = 1;
 }
 
+int eps16_probe_machine_output_stage_enabled(void) {
+    if (!plugin_initialized) return 0;
+    return eps16_output_stage_is_enabled(&plugin_output_stage);
+}
+
+void eps16_probe_machine_set_output_stage_enabled(int enabled) {
+    if (!plugin_initialized) return;
+    eps16_output_stage_set_enabled(&plugin_output_stage, enabled);
+}
+
+int eps16_probe_machine_oex_present(void) {
+    if (!plugin_initialized) return 1;
+    return plugin_oex_present != 0;
+}
+
+void eps16_probe_machine_set_oex_present(int present) {
+    if (!plugin_initialized) return;
+    plugin_oex_present = present ? 1 : 0;
+}
+
 size_t eps16_probe_machine_state_size(void) {
     if (!plugin_initialized) return 0;
 #define SNAPSHOT_FIELD_SIZE(name) + sizeof(name)
@@ -1007,7 +1129,8 @@ size_t eps16_probe_machine_state_size(void) {
            PLUGIN_SNAPSHOT_V5_FIELDS(SNAPSHOT_FIELD_SIZE)
            PLUGIN_SNAPSHOT_V6_FIELDS(SNAPSHOT_FIELD_SIZE)
            PLUGIN_SNAPSHOT_V7_FIELDS(SNAPSHOT_FIELD_SIZE)
-           PLUGIN_SNAPSHOT_V8_FIELDS(SNAPSHOT_FIELD_SIZE);
+           PLUGIN_SNAPSHOT_V8_FIELDS(SNAPSHOT_FIELD_SIZE)
+           PLUGIN_SNAPSHOT_V9_FIELDS(SNAPSHOT_FIELD_SIZE);
 #undef SNAPSHOT_FIELD_SIZE
 }
 
@@ -1017,7 +1140,7 @@ int eps16_probe_machine_save_state(void *data, size_t size) {
     memset(data, 0, size);
     PluginSnapshotHeader *header = (PluginSnapshotHeader *)data;
     memcpy(header->magic, "EPS16ST\0", 8);
-    header->version = 8;
+    header->version = 9;
     header->header_size = sizeof(*header);
     header->total_size = size;
     header->m68k_context_size = m68k_context_size();
@@ -1042,6 +1165,7 @@ int eps16_probe_machine_save_state(void *data, size_t size) {
     PLUGIN_SNAPSHOT_V6_FIELDS(SNAPSHOT_SAVE_FIELD)
     PLUGIN_SNAPSHOT_V7_FIELDS(SNAPSHOT_SAVE_FIELD)
     PLUGIN_SNAPSHOT_V8_FIELDS(SNAPSHOT_SAVE_FIELD)
+    PLUGIN_SNAPSHOT_V9_FIELDS(SNAPSHOT_SAVE_FIELD)
 #undef SNAPSHOT_SAVE_FIELD
 
     Es5505Core saved_es5505 = es5505;
@@ -1092,7 +1216,8 @@ int eps16_probe_machine_load_state(const void *data, size_t size,
     }
     PluginSnapshotHeader header;
     memcpy(&header, data, sizeof(header));
-    const size_t expected_v8 = eps16_probe_machine_state_size();
+    const size_t expected_v9 = eps16_probe_machine_state_size();
+    const size_t expected_v8 = expected_v9 - sizeof(plugin_output_stage);
     const size_t expected_v6 = expected_v8 - sizeof(duart_rx_a_enabled);
 #define SNAPSHOT_V7_FIELD_SIZE(name) - sizeof(name)
     const size_t expected_v6_legacy = expected_v6
@@ -1124,9 +1249,10 @@ int eps16_probe_machine_load_state(const void *data, size_t size,
                           : header.version == 4 ? expected_v4
                           : header.version == 5 ? expected_v5
                           : header.version == 6 ? expected_v6_legacy
-                          : header.version == 7 ? expected_v6 : expected_v8;
+                          : header.version == 7 ? expected_v6
+                          : header.version == 8 ? expected_v8 : expected_v9;
     if (memcmp(header.magic, "EPS16ST\0", 8) ||
-        (header.version < 1 || header.version > 8) ||
+        (header.version < 1 || header.version > 9) ||
         header.header_size != sizeof(header) || header.total_size != size ||
         size != expected || header.m68k_context_size != m68k_context_size()) {
         plugin_error(error, error_size, "machine snapshot format is incompatible");
@@ -1217,6 +1343,16 @@ int eps16_probe_machine_load_state(const void *data, size_t size,
         const unsigned int command = duart_registers[2];
         duart_rx_a_enabled = (command & 0x02) ? 0 :
             ((command & 0x01) || (duart_registers[5] & 0x02)) != 0;
+    }
+    if (header.version >= 9) {
+        PLUGIN_SNAPSHOT_V9_FIELDS(SNAPSHOT_LOAD_FIELD)
+    } else {
+        /* Older snapshots predate the output stage; its enabled/disabled
+           choice is a runtime session setting, not machine state, so it
+           is left as-is, but there is no saved filter/noise continuity
+           to restore, so start it quiet rather than reuse whatever this
+           session's state happened to be before the restore. */
+        eps16_output_stage_reset(&plugin_output_stage);
     }
 #undef SNAPSHOT_LOAD_FIELD
     snapshot_read(&reader, &es5505, sizeof(es5505));
