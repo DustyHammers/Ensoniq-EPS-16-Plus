@@ -56,13 +56,25 @@ int main(int argc, char **argv) {
     printf("midi_clock_bytes=%zu/%zu\n", clock_before, clock_after);
     if (clock_after != clock_before + 3) failed = 1;
 
-    /* DAW MIDI is external MIDI, not the local EPS keyboard or its physical
-       wheels. Preserve status bytes (including their channel nibble) and let
-       the original OS perform multitimbral track routing and controller
-       interpretation. */
+    /* Real hardware has two note inputs: its own keyboard, which always
+       plays the selected instrument regardless of MIDI IN MODE, and the
+       MIDI jack, which MIDI IN MODE governs. eps16_probe_machine_midi()
+       models the keyboard as note on/off hard-coded to MIDI channel 1 (see
+       the rationale there - deliberate divergence from upstream, never
+       MIDI BASE CHANNEL, never a plug-in parameter): the 0x90 below is a
+       channel-1 note on, so it now takes the local keyboard path
+       (live_note(), the same panel/KPC byte queue as
+       eps16_probe_machine_keyboard() above) instead of reaching the wire,
+       which moves 3 bytes off the wire total and adds 2 bytes to the panel
+       total. Channels 2-16 remain external MIDI - note on/off there, and
+       every other channel-voice message on every channel including
+       channel 1 (aftertouch, CC, program change, channel pressure, pitch
+       bend), still reach the wire with their status byte and channel
+       nibble intact, so the original OS still performs multitimbral track
+       routing and controller interpretation. */
     const size_t midi_before = eps16_probe_machine_midi_rx_consumed();
     const size_t panel_before = eps16_probe_machine_panel_rx_consumed();
-    eps16_probe_machine_midi(0x90, 60, 100);
+    eps16_probe_machine_midi(0x90, 60, 100); /* Note on, channel 1: keyboard path */
     eps16_probe_machine_midi(0xa0, 60, 50);
     eps16_probe_machine_midi(0xb0, 1, 127);  /* Mod wheel */
     eps16_probe_machine_midi(0xb0, 7, 96);   /* Volume */
@@ -79,7 +91,13 @@ int main(int argc, char **argv) {
     printf("channel_voice_midi=%zu/%zu panel=%zu/%zu illegal=%zu\n",
            midi_before, midi_after, panel_before, panel_after,
            eps16_probe_machine_illegal_instructions());
-    if (midi_after != midi_before + 31 || panel_after != panel_before ||
+    /* Wire total: 11 messages, all 3 bytes except the two channel-voice
+       messages below that are 2 bytes (program change 0xc1, channel
+       pressure 0xd2) = 9*3 + 2*2 = 31 bytes, minus the channel-1 note on
+       (0x90, 3 bytes) that now takes the keyboard path instead = 28.
+       Panel total: +2 bytes for that same note on (note 60 is within the
+       EPS's 36-96 key range, so live_note() does not drop it). */
+    if (midi_after != midi_before + 28 || panel_after != panel_before + 2 ||
         !expect_analog(0, 511) || !expect_analog(2, 1023) ||
         eps16_probe_machine_illegal_instructions())
         failed = 1;
