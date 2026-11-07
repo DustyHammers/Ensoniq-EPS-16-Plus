@@ -459,11 +459,6 @@ void Eps16PanelEditor::DiskButton::paintButton(juce::Graphics &graphics,
     const auto bounds = getLocalBounds().toFloat();
     const float width = bounds.getWidth();
     const float height = bounds.getHeight();
-    // Disk buttons are compiled-in at 78x62 design units; derive a local
-    // scale from the button's own current size so the outline stroke
-    // scales with it exactly like every panel control's line weights do,
-    // without needing the panel's own scale factor plumbed in here.
-    const float scale = height / 62.0f;
 
     /* Brighten on highlighted/down, dim on !isEnabled() - same mechanism
        the rest of the panel's procedural drawing uses - applied to every
@@ -486,8 +481,6 @@ void Eps16PanelEditor::DiskButton::paintButton(juce::Graphics &graphics,
     body.closeSubPath();
     graphics.setColour(stateColour(juce::Colour(0xff0a0a0b)));
     graphics.fillPath(body);
-    graphics.setColour(stateColour(juce::Colour(0xff3a3a3c)));
-    graphics.strokePath(body, juce::PathStrokeType(1.0f * scale));
 
     // Shutter: lightest about a third of the way across, falling to the
     // same darker tone at both edges.
