@@ -3,13 +3,18 @@
 Hardware-level emulation of the Ensoniq EPS-16 Plus sampler for macOS and
 Windows, built as a resizable Audio Unit and VST3 instrument.
 
+> **This is a fork.** Upstream is
+> [mardlib/Ensoniq-EPS-16-Plus](https://github.com/mardlib/Ensoniq-EPS-16-Plus),
+> where all of the emulation work lives. This fork replaces the procedurally
+> drawn front panel with a hardware-accurate sprite-based skin.
+
 This project builds on and references open-source work by Karl Stenerud,
 Aaron Giles, Christian Brunschen, MAMEdev, Raw Material Software and their
 contributors. See [Credits and third-party work](#credits-and-third-party-work)
 and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) for provenance and
 licence details.
 
-![EPS-16 Plus VST3 panel and keyboard](docs/images/eps16-plus-vst3-panel-keyboard.png)
+![Custom-skinned EPS-16 Plus VST3 front panel](docs/images/eps16-plus-vst3-panel-keyboard.png)
 
 ## 1.1.1
 
