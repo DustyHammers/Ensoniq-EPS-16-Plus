@@ -40,7 +40,11 @@ int main(void) {
             if (!eps16_probe_machine_load_state(data, bytes, error, sizeof(error))) {
                 fprintf(stderr, "restore failed: %s\n", error); return 4;
             }
-            eps16_probe_machine_midi(0x90, 60, 100);
+            /* Channel 2, not channel 1: this fork routes channel-1 note on/off
+               to the local keyboard path, so a channel-1 note never reaches the
+               UART receive path this test is measuring. The receiver-enable
+               gating under test is channel-independent. */
+            eps16_probe_machine_midi(0x91, 60, 100);
             midi_service_wire(bus_cycle_now() + MIDI_BYTE_CYCLES * 4);
             if (duart_rx_a_enabled != (int)enabled || midi_rx_count != (enabled ? 3 : 0)) {
                 fprintf(stderr, "v%u RX=%d bytes=%zu expected=%u\n", legacy ? 7 : 8,
