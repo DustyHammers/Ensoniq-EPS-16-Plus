@@ -731,25 +731,6 @@ void eps16_probe_machine_midi(uint8_t status, uint8_t data1, uint8_t data2) {
         return;
     }
     const unsigned int kind = status & 0xf0;
-    /* Real hardware has two note inputs: its own keyboard, which always
-       plays the currently selected instrument no matter what MIDI IN MODE
-       says, and the MIDI jack, which MIDI IN MODE governs. This plug-in
-       has a single MIDI input, so model the keyboard as note on/off
-       hard-coded to MIDI channel 1 - never MIDI BASE CHANNEL, never a
-       plug-in parameter, so that the default workflow (load plug-in, load
-       an instrument, play, and play back what was just sampled) works
-       without the user ever touching MIDI IN MODE, exactly as the real
-       keyboard does regardless of it. Channels 2-16 are left as external
-       MIDI, scheduled onto the wire exactly as before, so MULTI's
-       instrument-to-channel-9..16 multitimbral routing is unaffected.
-       This is a deliberate divergence from upstream. */
-    if ((kind == 0x90 || kind == 0x80) && (status & 0x0f) == 0) {
-        if (kind == 0x90 && data2)
-            live_note(data1, data2, 1);
-        else
-            live_note(data1, data2, 0);
-        return;
-    }
     const size_t message_size =
         kind == 0xc0 || kind == 0xd0 ? 2U :
         kind >= 0x80 && kind <= 0xe0 ? 3U : 0U;
