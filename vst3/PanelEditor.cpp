@@ -523,7 +523,9 @@ void Eps16PanelEditor::DiskButton::paintButton(juce::Graphics &graphics,
     juce::Font font(juce::FontOptions(
         "Helvetica Neue", labelArea.getHeight() * 0.40f, juce::Font::bold));
     const float maxTextWidth = labelArea.getWidth() * 0.78f;
-    const float textWidth = font.getStringWidthFloat(label);
+    juce::GlyphArrangement glyphs;
+    glyphs.addLineOfText(font, label, 0.0f, 0.0f);
+    const float textWidth = glyphs.getBoundingBox(0, -1, true).getWidth();
     if (textWidth > maxTextWidth && textWidth > 0.0f)
         font.setHeight(font.getHeight() * (maxTextWidth / textWidth));
     graphics.setFont(font);
