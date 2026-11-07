@@ -982,6 +982,19 @@ size_t eps16_probe_machine_debug_write_ram(uint32_t address, const void *data,
     return 0;
 }
 
+/* The EPS defaults to MULTI, where instruments answer on channels 9-16 and
+   MIDI BASE CHANNEL is ignored, so a freshly loaded plug-in is silent from a
+   controller on channel 1. POLY is the correct single-timbral default and
+   honours the base channel. Low RAM 0x0203 holds MIDI IN MODE (OMNI=0,
+   POLY=1, MULTI=2, MONO A=3, MONO B=4, verified on OS v1.30); writing it
+   takes effect immediately, with the VFD and channel matching following. */
+void eps16_probe_machine_default_midi_in_mode(void) {
+    if (!plugin_initialized) return;
+    const uint8_t current = low_ram[0x0203];
+    if (current > 4) return;
+    low_ram[0x0203] = 1;
+}
+
 size_t eps16_probe_machine_state_size(void) {
     if (!plugin_initialized) return 0;
 #define SNAPSHOT_FIELD_SIZE(name) + sizeof(name)

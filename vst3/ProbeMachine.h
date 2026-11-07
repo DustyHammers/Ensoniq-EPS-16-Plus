@@ -98,6 +98,11 @@ size_t eps16_probe_machine_debug_read_ram(uint32_t address, void *data,
    API and does not emulate a CPU or peripheral write. */
 size_t eps16_probe_machine_debug_write_ram(uint32_t address, const void *data,
                                            size_t size);
+/* Defaults MIDI IN MODE (low RAM 0x0203) to POLY, but only if its current
+   value is a plausible MIDI IN MODE (0-4); otherwise the address assumption
+   does not hold for this OS image and nothing is written. Intended to be
+   called once, after a fresh boot, never after a state restore. */
+void eps16_probe_machine_default_midi_in_mode(void);
 
 #ifdef __cplusplus
 }

@@ -99,6 +99,13 @@ private:
                maximumSysExEvents> sysExOutput{};
     juce::ValueTree state{"EPS16PlusPrototype"};
     juce::MemoryBlock pendingMachineState;
+    /* True once the fresh-boot MIDI IN MODE default has been applied, or
+       once this prepare is known to be restoring saved state instead of
+       booting fresh (which must keep whatever mode was saved). Checked
+       against emulated CPU cycles rather than at machineReady() itself, so
+       the OS's own boot-time MULTI default is given time to land before
+       this overrides it; see Eps16PlusProcessor::processBlock(). */
+    bool appliedDefaultMidiInMode{};
     /* Scratch for OEX Bus 2/Bus 3/Aux 1 when the host has none of them
        enabled, so that audio assigned to those outputs still sums into
        Main instead of being discarded. Sized once in prepareToPlay(); never

@@ -152,6 +152,7 @@ void ProbeMachineSink::prepare(double dawSampleRate) {
     if (initialized) {
         eps16_probe_machine_sampling_input_rate(dawSampleRate);
         cycleBase = eps16_probe_machine_cycles();
+        bootCycleCount = 0;
         discardQueuedAudio();
         {
             const std::lock_guard<std::mutex> lock(statusMutex);
@@ -175,6 +176,7 @@ void ProbeMachineSink::discardQueuedAudio() {
 
 void ProbeMachineSink::runUntil(std::uint64_t absoluteCpuCycle) {
     if (!isReady()) return;
+    bootCycleCount = absoluteCpuCycle;
     eps16_probe_machine_run_until(cycleBase + absoluteCpuCycle);
     Eps16ProbeAudioFrame frames[32];
     for (;;) {
@@ -354,6 +356,14 @@ bool ProbeMachineSink::debugWriteRam(std::uint32_t address, const void *data,
     MachineAccess access(machine);
     return access && eps16_probe_machine_debug_write_ram(address, data, size)
         == size;
+}
+
+bool ProbeMachineSink::applyDefaultMidiInMode() {
+    if (!isReady()) return false;
+    MachineAccess access(machine);
+    if (!access) return false;
+    eps16_probe_machine_default_midi_in_mode();
+    return true;
 }
 
 bool ProbeMachineSink::restoreState(const void *data, std::size_t size) {

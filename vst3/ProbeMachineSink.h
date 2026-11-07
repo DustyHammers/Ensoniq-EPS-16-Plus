@@ -77,6 +77,10 @@ public:
     bool debugWriteRam(std::uint32_t address, const void *data,
                        std::size_t size);
     bool restoreState(const void *data, std::size_t size);
+    bool applyDefaultMidiInMode();
+    [[nodiscard]] std::uint64_t cyclesSinceBoot() const {
+        return bootCycleCount;
+    }
 
 private:
     void publishDisplay();
@@ -102,6 +106,7 @@ private:
     Eps16ProbeMachine *machine{};
     bool blockActive{};
     std::uint64_t cycleBase{};
+    std::uint64_t bootCycleCount{};
     std::array<BandlimitedResampler, 4> resamplers;
     bool trackOutputDebugPending{};
     std::uint64_t trackOutputDebugFrames{};

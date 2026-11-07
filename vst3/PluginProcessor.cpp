@@ -14,6 +14,13 @@ namespace {
 constexpr std::uint32_t vstStateMagic = 0x45505356U; // EPSV
 constexpr std::uint32_t vstStateVersion = 1;
 
+/* The OS boot sequence sets its own MIDI IN MODE default (MULTI) well
+   before the machine reaches an idle, interactive state; every probe test
+   in this repository treats 220,000,000 emulated CPU cycles after a fresh
+   reset as "booted" for exactly this reason. Applying the POLY default
+   before that point would just be overwritten by the OS moments later. */
+constexpr std::uint64_t bootCompleteCpuCycles = 220000000;
+
 void modulePathAnchor() {}
 
 juce::File moduleFile() {
@@ -124,12 +131,17 @@ void Eps16PlusProcessor::prepareToPlay(double sampleRate,
                           getResourcePath(osDiskPathKey).toStdString());
     bridge.prepare(sampleRate);
     hostMidiClock.prepare(sampleRate);
-    if (machineSink.isReady() && pendingMachineState.getSize() > 0 &&
+    // A pending snapshot means this prepare is restoring a saved project,
+    // not a fresh boot, so the MIDI IN MODE default must not apply - the
+    // restored low RAM already holds whatever mode the user had saved.
+    const bool restoringSavedState = pendingMachineState.getSize() > 0;
+    if (machineSink.isReady() && restoringSavedState &&
         machineSink.restoreState(pendingMachineState.getData(),
                                  pendingMachineState.getSize())) {
         bridge.resetTimeline();
         pendingMachineState.reset();
     }
+    appliedDefaultMidiInMode = restoringSavedState;
     const juce::File mounted(getResourcePath(mountedDiskPathKey));
     if (machineSink.isReady() && mounted.existsAsFile() &&
         mounted.getFileExtension().equalsIgnoreCase(".iso"))
@@ -257,6 +269,11 @@ void Eps16PlusProcessor::processBlock(juce::AudioBuffer<float> &buffer,
                    outputChannels.size(), samples, midiEvents.data(),
                    eventCount, sysExOutput.data(), sysExOutput.size(),
                    &sysExOutputCount);
+    if (!appliedDefaultMidiInMode && machineSink.isReady() &&
+        machineSink.cyclesSinceBoot() >= bootCompleteCpuCycles) {
+        machineSink.applyDefaultMidiInMode();
+        appliedDefaultMidiInMode = true;
+    }
     if (!anyOexBusEnabled) {
         auto *mainLeft = mainOutput.getWritePointer(0);
         auto *mainRight = mainOutput.getWritePointer(1);
@@ -341,6 +358,11 @@ void Eps16PlusProcessor::setStateInformation(const void *data, int size) {
     state = restoredTree;
     refreshResourcePaths();
     pendingMachineState = restoredMachine;
+    // A machine snapshot arriving here means this load is restoring a saved
+    // project, not a fresh boot; keep the MIDI IN MODE default from firing
+    // in processBlock() once the restored state (or this pending one) takes
+    // hold, so a saved MULTI/MONO/etc. selection survives the load.
+    if (pendingMachineState.getSize() > 0) appliedDefaultMidiInMode = true;
     if (machineSink.isReady() && pendingMachineState.getSize() > 0) {
         bridge.resetTimeline();
         hostMidiClock.reset();
