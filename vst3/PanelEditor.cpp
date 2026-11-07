@@ -456,41 +456,77 @@ Eps16PanelEditor::DiskButton::DiskButton(juce::String name,
 
 void Eps16PanelEditor::DiskButton::paintButton(juce::Graphics &graphics,
                                                bool highlighted, bool down) {
-    auto area = getLocalBounds().toFloat().reduced(1.0f);
-    auto body = buttonColour;
-    if (highlighted) body = body.brighter(0.10f);
-    if (down) body = body.brighter(0.18f);
-    if (!isEnabled()) body = body.withMultipliedAlpha(0.42f);
-    graphics.setColour(body);
-    graphics.fillRoundedRectangle(area, 2.5f);
-    graphics.setColour(rackLabelColour.withMultipliedAlpha(
-        isEnabled() ? 0.90f : 0.35f));
-    graphics.drawRoundedRectangle(area, 2.5f, 1.0f);
+    const auto bounds = getLocalBounds().toFloat();
+    const float width = bounds.getWidth();
+    const float height = bounds.getHeight();
+    // Disk buttons are compiled-in at 78x62 design units; derive a local
+    // scale from the button's own current size so the outline stroke
+    // scales with it exactly like every panel control's line weights do,
+    // without needing the panel's own scale factor plumbed in here.
+    const float scale = height / 62.0f;
 
+    /* Brighten on highlighted/down, dim on !isEnabled() - same mechanism
+       the rest of the panel's procedural drawing uses - applied to every
+       element below. */
+    const auto stateColour = [this, highlighted, down](juce::Colour base) {
+        auto colour = base;
+        if (highlighted) colour = colour.brighter(0.10f);
+        if (down) colour = colour.brighter(0.18f);
+        if (!isEnabled()) colour = colour.withMultipliedAlpha(0.42f);
+        return colour;
+    };
+
+    // Body: 3.5" floppy disk silhouette, top-right corner notched.
+    juce::Path body;
+    body.startNewSubPath(0.0f, 0.0f);
+    body.lineTo(width - 0.085f * width, 0.0f);
+    body.lineTo(width, 0.085f * width);
+    body.lineTo(width, height);
+    body.lineTo(0.0f, height);
+    body.closeSubPath();
+    graphics.setColour(stateColour(juce::Colour(0xff0a0a0b)));
+    graphics.fillPath(body);
+    graphics.setColour(stateColour(juce::Colour(0xff3a3a3c)));
+    graphics.strokePath(body, juce::PathStrokeType(1.0f * scale));
+
+    // Shutter: lightest about a third of the way across, falling to the
+    // same darker tone at both edges.
     const auto shutter = juce::Rectangle<float>(
-        area.getX() + area.getWidth() * 0.22f,
-        area.getY() + area.getHeight() * 0.08f,
-        area.getWidth() * 0.56f, area.getHeight() * 0.27f);
-    graphics.setColour(juce::Colour(0xff777b7a).withMultipliedAlpha(
-        isEnabled() ? 1.0f : 0.4f));
+        width * 0.255f, height * 0.025f,
+        width * (0.80f - 0.255f), height * (0.33f - 0.025f));
+    juce::ColourGradient shutterGradient(
+        stateColour(juce::Colour(0xff969698)), shutter.getX(), shutter.getY(),
+        stateColour(juce::Colour(0xff969698)), shutter.getRight(),
+        shutter.getY(), false);
+    shutterGradient.addColour(1.0 / 3.0, stateColour(juce::Colour(0xffe8e8e8)));
+    graphics.setGradientFill(shutterGradient);
     graphics.fillRect(shutter);
-    graphics.setColour(juce::Colour(0xff1b1c1b));
-    graphics.fillRect(shutter.getRight() - shutter.getWidth() * 0.22f,
-                      shutter.getY(), shutter.getWidth() * 0.12f,
-                      shutter.getHeight());
 
+    // Shutter window.
+    const auto shutterWindow = juce::Rectangle<float>(
+        shutter.getX() + shutter.getWidth() * 0.56f,
+        shutter.getY() + shutter.getHeight() * 0.10f,
+        shutter.getWidth() * (0.90f - 0.56f),
+        shutter.getHeight() * (1.0f - 2.0f * 0.10f));
+    graphics.setColour(stateColour(juce::Colour(0xff080809)));
+    graphics.fillRect(shutterWindow);
+
+    // Label: flat fill, no gradient or highlight band.
     const auto labelArea = juce::Rectangle<float>(
-        area.getX() + area.getWidth() * 0.11f,
-        area.getY() + area.getHeight() * 0.50f,
-        area.getWidth() * 0.78f, area.getHeight() * 0.34f);
-    graphics.setColour(juce::Colour(0xffdedbd1).withMultipliedAlpha(
-        isEnabled() ? 1.0f : 0.4f));
-    graphics.fillRoundedRectangle(labelArea, 1.0f);
-    graphics.setColour(juce::Colour(0xff252625).withMultipliedAlpha(
-        isEnabled() ? 1.0f : 0.45f));
-    graphics.setFont(juce::Font(juce::FontOptions(
-        "Helvetica Neue", juce::jmax(5.5f, labelArea.getHeight() * 0.54f),
-        juce::Font::bold)));
+        width * 0.115f, height * 0.385f,
+        width * (0.885f - 0.115f), height * (0.925f - 0.385f));
+    graphics.setColour(stateColour(juce::Colour(0xff4c004a)));
+    graphics.fillRect(labelArea);
+
+    // Text: shrink to fit within 78% of the label width if necessary.
+    graphics.setColour(stateColour(juce::Colour(0xffeee8f0)));
+    juce::Font font(juce::FontOptions(
+        "Helvetica Neue", labelArea.getHeight() * 0.40f, juce::Font::bold));
+    const float maxTextWidth = labelArea.getWidth() * 0.78f;
+    const float textWidth = font.getStringWidthFloat(label);
+    if (textWidth > maxTextWidth && textWidth > 0.0f)
+        font.setHeight(font.getHeight() * (maxTextWidth / textWidth));
+    graphics.setFont(font);
     graphics.drawText(label, labelArea, juce::Justification::centred, false);
 }
 
