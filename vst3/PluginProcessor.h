@@ -99,6 +99,11 @@ private:
                maximumSysExEvents> sysExOutput{};
     juce::ValueTree state{"EPS16PlusPrototype"};
     juce::MemoryBlock pendingMachineState;
+    /* Scratch for OEX Bus 2/Bus 3/Aux 1 when the host has none of them
+       enabled, so that audio assigned to those outputs still sums into
+       Main instead of being discarded. Sized once in prepareToPlay(); never
+       resized in processBlock(). */
+    juce::AudioBuffer<float> oexScratchBuffer;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(Eps16PlusProcessor)
 };

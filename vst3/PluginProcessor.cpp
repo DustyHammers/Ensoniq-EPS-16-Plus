@@ -111,8 +111,12 @@ Eps16PlusProcessor::Eps16PlusProcessor()
     refreshResourcePaths();
 }
 
-void Eps16PlusProcessor::prepareToPlay(double sampleRate, int) {
+void Eps16PlusProcessor::prepareToPlay(double sampleRate,
+                                       int maximumExpectedSamplesPerBlock) {
     refreshResourcePaths();
+    // bus2Left, bus2Right, bus3Left, bus3Right, aux1Left, aux1Right.
+    oexScratchBuffer.setSize(6, maximumExpectedSamplesPerBlock,
+                             false, false, false);
     machineSink.configure(getResourcePath(romPathKey).toStdString(),
                           getResourcePath(upperRomPathKey).toStdString(),
                           getResourcePath(lowerRomPathKey).toStdString(),
@@ -208,19 +212,61 @@ void Eps16PlusProcessor::processBlock(juce::AudioBuffer<float> &buffer,
                      });
 
     std::size_t sysExOutputCount = 0;
+    /* If the host has none of Bus 2/Bus 3/Aux 1 enabled, emulate a machine
+       with no OEX expander fitted: render those three outputs into scratch
+       (preallocated in prepareToPlay, never resized here) and sum all of
+       them into Main below, so a voice assigned to any EPS output is still
+       audible. If the host has enabled any of them, keep exactly the
+       existing per-bus behaviour: each enabled bus is routed discretely and
+       any bus still disabled is discarded, Aux 1 included. */
+    const bool anyOexBusEnabled = bus2Output.getNumChannels() > 0 ||
+                                  bus3Output.getNumChannels() > 0 ||
+                                  aux1Output.getNumChannels() > 0;
+    float *bus2Left = nullptr;
+    float *bus2Right = nullptr;
+    float *bus3Left = nullptr;
+    float *bus3Right = nullptr;
+    float *aux1Left = nullptr;
+    float *aux1Right = nullptr;
+    if (anyOexBusEnabled) {
+        bus2Left = bus2Output.getNumChannels() > 0
+            ? bus2Output.getWritePointer(0) : nullptr;
+        bus2Right = bus2Output.getNumChannels() > 1
+            ? bus2Output.getWritePointer(1) : nullptr;
+        bus3Left = bus3Output.getNumChannels() > 0
+            ? bus3Output.getWritePointer(0) : nullptr;
+        bus3Right = bus3Output.getNumChannels() > 1
+            ? bus3Output.getWritePointer(1) : nullptr;
+        aux1Left = aux1Output.getNumChannels() > 0
+            ? aux1Output.getWritePointer(0) : nullptr;
+        aux1Right = aux1Output.getNumChannels() > 1
+            ? aux1Output.getWritePointer(1) : nullptr;
+    } else {
+        bus2Left = oexScratchBuffer.getWritePointer(0);
+        bus2Right = oexScratchBuffer.getWritePointer(1);
+        bus3Left = oexScratchBuffer.getWritePointer(2);
+        bus3Right = oexScratchBuffer.getWritePointer(3);
+        aux1Left = oexScratchBuffer.getWritePointer(4);
+        aux1Right = oexScratchBuffer.getWritePointer(5);
+    }
     std::array<float *, 8> outputChannels{
         mainOutput.getWritePointer(0), mainOutput.getWritePointer(1),
-        bus2Output.getNumChannels() > 0 ? bus2Output.getWritePointer(0) : nullptr,
-        bus2Output.getNumChannels() > 1 ? bus2Output.getWritePointer(1) : nullptr,
-        bus3Output.getNumChannels() > 0 ? bus3Output.getWritePointer(0) : nullptr,
-        bus3Output.getNumChannels() > 1 ? bus3Output.getWritePointer(1) : nullptr,
-        aux1Output.getNumChannels() > 0 ? aux1Output.getWritePointer(0) : nullptr,
-        aux1Output.getNumChannels() > 1 ? aux1Output.getWritePointer(1) : nullptr
+        bus2Left, bus2Right, bus3Left, bus3Right, aux1Left, aux1Right
     };
     bridge.process(inputLeft, inputRight, outputChannels.data(),
                    outputChannels.size(), samples, midiEvents.data(),
                    eventCount, sysExOutput.data(), sysExOutput.size(),
                    &sysExOutputCount);
+    if (!anyOexBusEnabled) {
+        auto *mainLeft = mainOutput.getWritePointer(0);
+        auto *mainRight = mainOutput.getWritePointer(1);
+        for (int sample = 0; sample < samples; ++sample) {
+            mainLeft[sample] += bus2Left[sample] + bus3Left[sample] +
+                                aux1Left[sample];
+            mainRight[sample] += bus2Right[sample] + bus3Right[sample] +
+                                 aux1Right[sample];
+        }
+    }
     midi.clear();
     for (std::size_t index = 0; index < sysExOutputCount; ++index) {
         const auto &event = sysExOutput[index];
