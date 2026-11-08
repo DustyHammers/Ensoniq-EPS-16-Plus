@@ -7,13 +7,8 @@
    the board's own analog reconstruction filter. See ProbeMachine.c's call
    site for how this replaces the plain audio_to_pcm16()/32768.0f
    conversion when enabled, and PluginProcessor/ProbeMachineSink for how the
-   16x-oversampled result reaches a second BandlimitedResampler
-   configuration at host rate. 16x, not 8x: at 8x the highest converter
-   rate the OS sweeps through during boot (active_voice 31, ~19531 Hz
-   converter rate) oversamples to below twice the 109040.1090 Hz I/V pole,
-   putting that pole beyond the oversampled Nyquist and making the
-   prewarped-bilinear transform singular. 16x clears it at every
-   active_voice from 0 to 31.
+   8x-oversampled result reaches a second BandlimitedResampler configuration
+   at host rate.
 
    Channels are indexed exactly as the plug-in's existing 8-wide output
    array: 0/1 Main L/R (main board U48), 2/3 Bus 2 L/R (OEX-6 U8), 4/5
@@ -28,7 +23,7 @@ extern "C" {
 #endif
 
 #define EPS16_OUTPUT_STAGE_CHANNELS 8
-#define EPS16_OUTPUT_STAGE_OVERSAMPLE 16
+#define EPS16_OUTPUT_STAGE_OVERSAMPLE 8
 
 /* Per-channel state that evolves sample to sample: the reconstruction
    filter's integrator state (transposed direct form II; one value per
