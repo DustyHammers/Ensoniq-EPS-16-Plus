@@ -119,9 +119,9 @@ private:
     std::array<BandlimitedResampler, 4> resamplers;
     /* Kept alongside `resamplers`, never in place of it: with the output
        stage enabled, runUntil()/audioOutput() push and pull through this
-       8x-configured set instead, so bypass (the flag off) always finds
+       16x-configured set instead, so bypass (the flag off) always finds
        `resamplers` exactly as it was before the output stage existed. */
-    std::array<BandlimitedResampler8x, 4> resamplers8x;
+    std::array<BandlimitedResampler16x, 4> resamplers16x;
     bool outputStageActive{};
     bool trackOutputDebugPending{};
     std::uint64_t trackOutputDebugFrames{};

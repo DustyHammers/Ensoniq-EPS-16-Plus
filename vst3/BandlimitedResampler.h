@@ -21,15 +21,16 @@ inline double bandlimitedResamplerSinc(double value) {
 
 /* OversampleFactor 1 is the plain converter-rate path: BandlimitedResampler
    below is an alias for it, byte-for-byte the same design this class had
-   before the output stage existed. OversampleFactor 8 is the same design
-   reconfigured for the 8x-oversampled output-stage path - 8x the taps,
-   1/8th the clock-divider unit, and 8x the history depth, so a source at
-   8x the rate keeps the same time-domain tap window.
+   before the output stage existed. OversampleFactor 16 is the same design
+   reconfigured for the 16x-oversampled output-stage path (see
+   output_stage.h for why 16x, not 8x) - 16x the taps, 1/16th the
+   clock-divider unit, and 16x the history depth, so a source at 16x the
+   rate keeps the same time-domain tap window.
 
    This scaling keeps latencyCycles exactly invariant under
    OversampleFactor: tapCount scales by it, maximumClockDivider scales by
    its reciprocal, and latencyCycles = (tapCount/2)*maximumClockDivider
-   cancels the factor out algebraically. That is what makes the 8x path's
+   cancels the factor out algebraically. That is what makes the 16x path's
    reported latency identical to the 1x path's at any given converter
    rate - see BandlimitedResamplerTest.cpp's latency-equality check and
    PluginProcessor.cpp's setLatencySamples() call, which relies on it by
@@ -188,7 +189,7 @@ private:
 };
 
 using BandlimitedResampler = BandlimitedResamplerT<1>;
-using BandlimitedResampler8x = BandlimitedResamplerT<8>;
+using BandlimitedResampler16x = BandlimitedResamplerT<16>;
 
 } // namespace eps16::vst3
 

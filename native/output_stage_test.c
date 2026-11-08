@@ -159,8 +159,80 @@ static int check_close(const char *label, double actual, double expected,
     return diff <= tolerance;
 }
 
+static void reset_fresh_state(Eps16OutputStageState *state) {
+    for (unsigned int c = 0; c < EPS16_OUTPUT_STAGE_CHANNELS; ++c) {
+        state->channel[c].hp_state = state->channel[c].lp1_state =
+            state->channel[c].lp2_state = state->channel[c].bq_state1 =
+                state->channel[c].bq_state2 = 0.0;
+        state->channel[c].previous_segment = -1;
+        state->channel[c].noise_counter = 0;
+    }
+    state->enabled = 1;
+}
+
+static int push_tone(Eps16OutputStageState *state, uint32_t native_rate_hz,
+                     unsigned int sample_count, float out[]) {
+    int finite_and_bounded = 1;
+    for (unsigned int n = 0; n < sample_count; ++n) {
+        const double phase =
+            2.0 * EPS16_TEST_PI * 1000.0 * (double)n / (double)native_rate_hz;
+        const int16_t pcm = (int16_t)lround(0.9 * 32767.0 * sin(phase));
+        eps16_output_stage_process(state, 0, pcm, native_rate_hz, out);
+        for (unsigned int k = 0; k < EPS16_OUTPUT_STAGE_OVERSAMPLE; ++k)
+            if (!isfinite(out[k]) || fabsf(out[k]) > 10.0f)
+                finite_and_bounded = 0;
+    }
+    return finite_and_bounded;
+}
+
+/* The OS sweeps active_voice (and so the converter rate) across its whole
+   range during boot, well before it settles at 44642 Hz or 29761 Hz - the
+   only two rates the THD+N/magnitude-response checks above exercise. Every
+   active_voice from 0 to 31 must produce finite, bounded output on its
+   own. */
+static int test_every_active_voice_rate_is_stable(void) {
+    int ok = 1;
+    for (unsigned int active_voice = 0; active_voice < 32; ++active_voice) {
+        const uint32_t native_rate_hz =
+            10000000U / (16U * (active_voice + 1U));
+        Eps16OutputStageState state;
+        reset_fresh_state(&state);
+        float out[EPS16_OUTPUT_STAGE_OVERSAMPLE];
+        if (!push_tone(&state, native_rate_hz, 500, out)) {
+            fprintf(stderr,
+                    "active_voice=%u native_rate_hz=%u produced a "
+                    "non-finite or unbounded sample\n",
+                    active_voice, native_rate_hz);
+            ok = 0;
+        }
+    }
+    printf("every_active_voice_rate_is_stable=%s\n", ok ? "OK" : "FAIL");
+    return ok;
+}
+
+/* The OS does not reset between rates: a single boot sweeps active_voice
+   down from its highest setting, idles there a while, then settles at a
+   working rate - 19531 -> 29761 -> 19531 -> 44642 Hz is representative.
+   Carries filter state across every rate change, unlike the test above,
+   since that is what actually happens at boot. */
+static int test_rate_walk_without_reset_is_stable(void) {
+    static const uint32_t rates[4] = {19531U, 29761U, 19531U, 44642U};
+    Eps16OutputStageState state;
+    reset_fresh_state(&state);
+    float out[EPS16_OUTPUT_STAGE_OVERSAMPLE] = {0};
+    int all_finite = 1;
+    for (unsigned int stage = 0; stage < 4; ++stage)
+        if (!push_tone(&state, rates[stage], 200, out)) all_finite = 0;
+    printf("rate_walk_without_reset_is_stable=%s\n",
+           all_finite ? "OK" : "FAIL");
+    return all_finite;
+}
+
 int main(void) {
     int ok = 1;
+
+    ok &= test_every_active_voice_rate_is_stable();
+    ok &= test_rate_walk_without_reset_is_stable();
 
     /* "1000.6 Hz ... coherent" means an exact integer number of cycles
        over the 2^18-sample window; 1487 cycles is the nearest integer and

@@ -1,5 +1,6 @@
 #include "output_stage.h"
 
+#include <assert.h>
 #include <math.h>
 
 #define EPS16_OUTPUT_STAGE_PI 3.14159265358979323846
@@ -89,7 +90,8 @@ static void eps16_output_stage_ensure_tables(void) {
 
 /* ---- analog reconstruction filter: discrete coefficients ---------------
    Four cascaded real poles (HP, LP, LP, then a 2-pole LP section),
-   prewarped-bilinear-transformed at the current 8x converter rate, each
+   prewarped-bilinear-transformed at the current oversampled converter
+   rate (EPS16_OUTPUT_STAGE_OVERSAMPLE times native_rate_hz), each
    realized in transposed direct form II (one state word per first-order
    section, two for the biquad - exactly the state kept above). */
 
@@ -131,27 +133,45 @@ static double eps16_cplx_abs(Eps16Complex a) {
     return sqrt(a.re * a.re + a.im * a.im);
 }
 
+/* tan(pi*fc/fs) (the prewarped-bilinear substitution below) only has the
+   right sign and is only finite for fc < fs/2; at fc == fs/2 it is a pole
+   and beyond it it is negative, which is exactly what turned a stable
+   lowpass/highpass into a divergent one at the high end of the converter
+   rate range (active_voice sweeps the rate from well below the 109040 Hz
+   I/V pole up past it during boot). No corner this filter is built from
+   is physically allowed to reach Nyquist, so clamp it below there before
+   prewarping rather than let the math go singular. */
+static double eps16_clamp_corner_hz(double corner_hz, double fs_hz) {
+    const double nyquist_margin = 0.49 * fs_hz;
+    return corner_hz < nyquist_margin ? corner_hz : nyquist_margin;
+}
+
 static void eps16_one_pole_lowpass(Eps16OnePole *section, double fc_hz,
                                    double fs_hz) {
-    const double c = tan(EPS16_OUTPUT_STAGE_PI * fc_hz / fs_hz);
+    const double c = tan(EPS16_OUTPUT_STAGE_PI *
+                         eps16_clamp_corner_hz(fc_hz, fs_hz) / fs_hz);
     const double b0 = c / (1.0 + c);
     section->b0 = b0;
     section->b1 = b0;
     section->a1 = (c - 1.0) / (c + 1.0);
+    assert(isfinite(section->a1) && fabs(section->a1) < 1.0);
 }
 
 static void eps16_one_pole_highpass(Eps16OnePole *section, double fc_hz,
                                     double fs_hz) {
-    const double c = tan(EPS16_OUTPUT_STAGE_PI * fc_hz / fs_hz);
+    const double c = tan(EPS16_OUTPUT_STAGE_PI *
+                         eps16_clamp_corner_hz(fc_hz, fs_hz) / fs_hz);
     const double b0 = 1.0 / (1.0 + c);
     section->b0 = b0;
     section->b1 = -b0;
     section->a1 = (c - 1.0) / (c + 1.0);
+    assert(isfinite(section->a1) && fabs(section->a1) < 1.0);
 }
 
 static void eps16_biquad_lowpass(Eps16Biquad *section, double f0_hz,
                                  double q, double fs_hz) {
-    const double w0 = 2.0 * EPS16_OUTPUT_STAGE_PI * f0_hz / fs_hz;
+    const double w0 = 2.0 * EPS16_OUTPUT_STAGE_PI *
+        eps16_clamp_corner_hz(f0_hz, fs_hz) / fs_hz;
     const double alpha = sin(w0) / (2.0 * q);
     const double cos_w0 = cos(w0);
     const double a0 = 1.0 + alpha;
@@ -160,6 +180,9 @@ static void eps16_biquad_lowpass(Eps16Biquad *section, double f0_hz,
     section->b2 = ((1.0 - cos_w0) / 2.0) / a0;
     section->a1 = (-2.0 * cos_w0) / a0;
     section->a2 = (1.0 - alpha) / a0;
+    /* Pole magnitude for a conjugate pair is sqrt(a2); squared here to
+       avoid the sqrt. */
+    assert(isfinite(section->a2) && fabs(section->a2) < 1.0);
 }
 
 static Eps16Complex eps16_one_pole_response(const Eps16OnePole *section,
@@ -319,10 +342,10 @@ void eps16_output_stage_process(Eps16OutputStageState *state,
         (double)eps16_output_stage_convert(channel_state, channel, pcm_sample);
 
     for (unsigned int k = 0; k < EPS16_OUTPUT_STAGE_OVERSAMPLE; ++k) {
-        /* The zero-order hold: every one of the 8 sub-samples starts from
-           the same, single converter output - the repetition itself is
-           the hold. Only the filter's own memory makes the 8 results
-           differ. */
+        /* The zero-order hold: every one of the oversampled sub-samples
+           starts from the same, single converter output - the repetition
+           itself is the hold. Only the filter's own memory makes the
+           results differ. */
         double x = converter_output;
         x = eps16_one_pole_process(&filter_set->hp, &channel_state->hp_state,
                                    x);

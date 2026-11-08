@@ -43,7 +43,7 @@ bool ProbeMachineSink::beginBlock() {
             // reset, not just the one becoming active, since the one
             // becoming inactive must not replay stale history either.
             for (auto &resampler : resamplers) resampler.reset();
-            for (auto &resampler : resamplers8x) resampler.reset();
+            for (auto &resampler : resamplers16x) resampler.reset();
             outputStageActive = active;
         }
     }
@@ -142,7 +142,7 @@ void ProbeMachineSink::prepare(double dawSampleRate) {
                    [dawSampleRate](auto &resampler) {
                        return resampler.prepare(dawSampleRate);
                    }) &&
-        std::all_of(resamplers8x.begin(), resamplers8x.end(),
+        std::all_of(resamplers16x.begin(), resamplers16x.end(),
                    [dawSampleRate](auto &resampler) {
                        return resampler.prepare(dawSampleRate);
                    });
@@ -175,7 +175,7 @@ void ProbeMachineSink::prepare(double dawSampleRate) {
         // resamplers that have nothing to reset yet.
         outputStageActive = eps16_probe_machine_output_stage_enabled() != 0;
         for (auto &resampler : resamplers) resampler.reset();
-        for (auto &resampler : resamplers8x) resampler.reset();
+        for (auto &resampler : resamplers16x) resampler.reset();
         discardQueuedAudio();
         {
             const std::lock_guard<std::mutex> lock(statusMutex);
@@ -208,8 +208,8 @@ void ProbeMachineSink::runUntil(std::uint64_t absoluteCpuCycle) {
         for (std::size_t index = 0; index < count; ++index) {
             const auto &frame = frames[index];
             if (outputStageActive) {
-                for (std::size_t bus = 0; bus < resamplers8x.size(); ++bus)
-                    resamplers8x[bus].push(frame.cpu_cycle - cycleBase,
+                for (std::size_t bus = 0; bus < resamplers16x.size(); ++bus)
+                    resamplers16x[bus].push(frame.cpu_cycle - cycleBase,
                                            frame.clock_divider,
                                            frame.outputs[bus * 2],
                                            frame.outputs[bus * 2 + 1]);
@@ -294,7 +294,7 @@ void ProbeMachineSink::audioOutput(float *channels, std::size_t channelCount,
     const auto busCount = std::min(resamplers.size(), channelCount / 2);
     if (outputStageActive) {
         for (std::size_t bus = 0; bus < busCount; ++bus)
-            resamplers8x[bus].output(cycle, channels[bus * 2],
+            resamplers16x[bus].output(cycle, channels[bus * 2],
                                      channels[bus * 2 + 1]);
     } else {
         for (std::size_t bus = 0; bus < busCount; ++bus)
@@ -439,7 +439,7 @@ bool ProbeMachineSink::restoreState(const void *data, std::size_t size) {
     discardQueuedAudio();
     outputStageActive = eps16_probe_machine_output_stage_enabled() != 0;
     for (auto &resampler : resamplers) resampler.reset();
-    for (auto &resampler : resamplers8x) resampler.reset();
+    for (auto &resampler : resamplers16x) resampler.reset();
     publishDisplay();
     {
         const std::lock_guard<std::mutex> lock(statusMutex);
