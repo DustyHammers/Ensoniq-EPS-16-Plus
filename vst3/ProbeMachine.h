@@ -104,30 +104,6 @@ size_t eps16_probe_machine_debug_write_ram(uint32_t address, const void *data,
    called once, after a fresh boot, never after a state restore. */
 void eps16_probe_machine_default_midi_in_mode(void);
 
-/* Whether the DAC output-stage model (TDA1541A + zero-order hold + analog
-   reconstruction filter) is applied in place of the plain PCM16 ->
-   normalized-float conversion. Defaults to on for a freshly created
-   machine. Wiring in a future user-facing switch is exactly a call to the
-   setter; there is deliberately no plug-in parameter yet. */
-int eps16_probe_machine_output_stage_enabled(void);
-void eps16_probe_machine_set_output_stage_enabled(int enabled);
-
-/* Whether the virtual machine has an OEX-6 expander fitted - i.e.
-   whether Bus 2/Bus 3/Aux 1 have their own physical DACs. Refreshed every
-   block from the host's own bus state; defaults to present. Only the
-   output-stage model (above) consults this: without it, those voices are
-   routed to the main pair digitally inside OTTO, ahead of any converter,
-   so when the output stage is enabled and no expander is present, it
-   folds them into Main's own conversion rather than converting each
-   independently (silence for their own channels then matches reality:
-   no expander, no DAC, no self-noise). The existing float-domain OEX
-   fold-down in the processor (summing resampled Bus 2/Bus 3/Aux into Main
-   when the host has none of them enabled) still runs after this exactly
-   as before; with no expander it is adding exact silence, not duplicating
-   anything. */
-int eps16_probe_machine_oex_present(void);
-void eps16_probe_machine_set_oex_present(int present);
-
 #ifdef __cplusplus
 }
 #endif

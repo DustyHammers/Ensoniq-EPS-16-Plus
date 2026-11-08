@@ -22,13 +22,6 @@ int main(void) {
     for (unsigned int route = 0; route < 4; ++route) {
         Eps16ProbeMachine *machine = eps16_probe_machine_create();
         if (!machine || !eps16_probe_machine_begin(machine)) return 1;
-        /* This exercises OTTO's own bus assignment, not DAC fidelity: it
-           asserts exact digital silence on every unrouted channel, which
-           the output stage's own (tiny but nonzero) converter noise would
-           otherwise disturb. eps16_probe_machine_set_output_stage_enabled()
-           is a no-op without eps16_probe_machine_initialize(), which this
-           test deliberately skips, so set the field directly. */
-        plugin_output_stage.enabled = 0;
         es5505_core_init(&es5505, routing_test_sample, NULL);
         es5505.active_voice = 20;
         Es5505Voice *voice = &es5505.voices[0];

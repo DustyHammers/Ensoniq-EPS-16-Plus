@@ -3,16 +3,12 @@
 
 static void *legacy_v7(const void *data, size_t size, size_t *legacy_size) {
     const size_t tail = sizeof(Es5505Core) + sizeof(KpcDevice) + m68k_context_size();
-    /* V8 (duart_rx_a_enabled) and V9 (plugin_output_stage) are written
-       back to back, immediately before this fixed tail; a true V7
-       snapshot predates both, so both come out. */
-    const size_t removed = sizeof(duart_rx_a_enabled) + sizeof(plugin_output_stage);
-    const size_t offset = size - tail - removed;
-    *legacy_size = size - removed;
+    const size_t offset = size - tail - sizeof(duart_rx_a_enabled);
+    *legacy_size = size - sizeof(duart_rx_a_enabled);
     uint8_t *result = malloc(*legacy_size);
     if (!result) return NULL;
     memcpy(result, data, offset);
-    memcpy(result + offset, (const uint8_t *)data + offset + removed, tail);
+    memcpy(result + offset, (const uint8_t *)data + offset + sizeof(duart_rx_a_enabled), tail);
     PluginSnapshotHeader *header = (PluginSnapshotHeader *)result;
     header->version = 7;
     header->total_size = *legacy_size;

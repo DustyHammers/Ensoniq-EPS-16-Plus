@@ -153,12 +153,7 @@ add_library(eps16_probe_machine STATIC
   ../native/es5510_core.c
   ../native/sampling_input_circuit.c
   ../native/hfe_disk.c
-  ../native/output_stage.c
-  ../native/output_stage.h
 )
-if(NOT MSVC)
-  target_link_libraries(eps16_probe_machine PUBLIC m)
-endif()
 target_include_directories(eps16_probe_machine PUBLIC
   "${CMAKE_CURRENT_SOURCE_DIR}"
   "${CMAKE_SOURCE_DIR}/native"
@@ -429,9 +424,6 @@ target_link_libraries(eps16_indicator_map_probe PRIVATE eps16_probe_machine)
 
 add_executable(eps16_probe_machine_restore_test ProbeMachineRestoreTest.c)
 target_link_libraries(eps16_probe_machine_restore_test PRIVATE eps16_probe_machine)
-
-add_executable(eps16_output_stage_bypass_test OutputStageBypassTest.c)
-target_link_libraries(eps16_output_stage_bypass_test PRIVATE eps16_probe_machine)
 
 add_executable(eps16_track_select_audio_test TrackSelectAudioTest.c)
 target_link_libraries(eps16_track_select_audio_test PRIVATE eps16_probe_machine)

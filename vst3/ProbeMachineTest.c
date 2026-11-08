@@ -10,18 +10,6 @@ static void run_for(uint64_t cycles) {
     eps16_probe_machine_run_until(eps16_probe_machine_cycles() + cycles);
 }
 
-/* A queued frame's clock_divider is a multiple of 16 in [16, 512] with the
-   output stage off (the 1x BandlimitedResampler's native-rate convention),
-   or a multiple of 2 in [2, 64] with it on (1/8th that, from the 8x
-   oversampled path) - see BandlimitedResampler.h. The output stage
-   defaults on, so accept either; this test is about queue ordering, not
-   which convention is active. */
-static int is_valid_clock_divider(uint32_t divider) {
-    const int valid_1x = divider >= 16 && divider <= 512 && divider % 16 == 0;
-    const int valid_8x = divider >= 2 && divider <= 64 && divider % 2 == 0;
-    return valid_1x || valid_8x;
-}
-
 static void click(uint8_t raw_code) {
     eps16_probe_machine_panel_byte((uint8_t)(raw_code | 0x80));
     eps16_probe_machine_panel_byte(0);
@@ -399,7 +387,9 @@ int main(int argc, char **argv) {
         const size_t count = eps16_probe_machine_drain_audio(queued, 64);
         for (size_t index = 0; index < count; ++index) {
             if (queued[index].cpu_cycle < previous_audio_cycle ||
-                !is_valid_clock_divider(queued[index].clock_divider))
+                queued[index].clock_divider < 16 ||
+                queued[index].clock_divider > 512 ||
+                queued[index].clock_divider % 16)
                 return 1;
             previous_audio_cycle = queued[index].cpu_cycle;
         }

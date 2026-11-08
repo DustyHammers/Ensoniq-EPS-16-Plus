@@ -6,7 +6,6 @@
 #include <cstdio>
 
 using eps16::vst3::BandlimitedResampler;
-using eps16::vst3::BandlimitedResampler8x;
 
 static double renderTone(double frequency, std::uint32_t divider) {
     constexpr double dawRate = 48000.0;
@@ -44,23 +43,6 @@ static double renderTone(double frequency, std::uint32_t divider) {
 
 int main() {
     if (BandlimitedResampler::latencySamples(48000.0) != 59) return 1;
-
-    // The 8x-oversampled output-stage path must report exactly the same
-    // latency as the plain 1x path at every sample rate a host might use,
-    // so toggling the output stage on/off never forces a host re-sync.
-    static_assert(BandlimitedResampler::latencyCycles ==
-                      BandlimitedResampler8x::latencyCycles,
-                  "1x and 8x latencyCycles must be identical by construction");
-    for (const double rate : {44100.0, 48000.0, 88200.0, 96000.0, 176400.0,
-                             192000.0}) {
-        if (BandlimitedResampler::latencySamples(rate) !=
-            BandlimitedResampler8x::latencySamples(rate)) {
-            std::printf("latency mismatch at %f: 1x=%d 8x=%d\n", rate,
-                       BandlimitedResampler::latencySamples(rate),
-                       BandlimitedResampler8x::latencySamples(rate));
-            return 1;
-        }
-    }
     const auto rate78kRms = renderTone(5000.0, 128);
     const auto rate44kRms = renderTone(5000.0, 224);
     const auto rate30kRms = renderTone(5000.0, 336);
