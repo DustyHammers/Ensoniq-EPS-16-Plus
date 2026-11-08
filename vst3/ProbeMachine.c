@@ -245,6 +245,24 @@ static void plugin_track_debug_log(const char *event) {
 #define PLUGIN_SNAPSHOT_V8_FIELDS(X) \
     X(duart_rx_a_enabled)
 
+/* A short-lived version 9 existed only on this branch, while it carried a
+   DAC output-stage model that has since been fully reverted; its extra
+   per-channel filter/noise state is gone along with it. This mirrors the
+   layout that state used to have, byte for byte, solely so
+   eps16_probe_machine_load_state() can skip over it in a snapshot saved
+   during that window - never read, only sizeof()'d - so such a snapshot
+   still loads instead of being stranded by the revert. New snapshots are
+   never written at version 9; see eps16_probe_machine_save_state(). */
+typedef struct {
+    double hp_state, lp1_state, lp2_state, bq_state1, bq_state2;
+    int32_t previous_segment;
+    uint64_t noise_counter;
+} Eps16LegacyV9OutputStageChannel;
+typedef struct {
+    Eps16LegacyV9OutputStageChannel channel[8];
+    int enabled;
+} Eps16LegacyV9OutputStage;
+
 Eps16ProbeMachine *eps16_probe_machine_create(void) {
     Eps16ProbeMachine *machine = calloc(1, sizeof(*machine));
     if (!machine) return NULL;
@@ -1093,6 +1111,7 @@ int eps16_probe_machine_load_state(const void *data, size_t size,
     PluginSnapshotHeader header;
     memcpy(&header, data, sizeof(header));
     const size_t expected_v8 = eps16_probe_machine_state_size();
+    const size_t expected_v9 = expected_v8 + sizeof(Eps16LegacyV9OutputStage);
     const size_t expected_v6 = expected_v8 - sizeof(duart_rx_a_enabled);
 #define SNAPSHOT_V7_FIELD_SIZE(name) - sizeof(name)
     const size_t expected_v6_legacy = expected_v6
@@ -1124,9 +1143,10 @@ int eps16_probe_machine_load_state(const void *data, size_t size,
                           : header.version == 4 ? expected_v4
                           : header.version == 5 ? expected_v5
                           : header.version == 6 ? expected_v6_legacy
-                          : header.version == 7 ? expected_v6 : expected_v8;
+                          : header.version == 7 ? expected_v6
+                          : header.version == 8 ? expected_v8 : expected_v9;
     if (memcmp(header.magic, "EPS16ST\0", 8) ||
-        (header.version < 1 || header.version > 8) ||
+        (header.version < 1 || header.version > 9) ||
         header.header_size != sizeof(header) || header.total_size != size ||
         size != expected || header.m68k_context_size != m68k_context_size()) {
         plugin_error(error, error_size, "machine snapshot format is incompatible");
@@ -1217,6 +1237,11 @@ int eps16_probe_machine_load_state(const void *data, size_t size,
         const unsigned int command = duart_registers[2];
         duart_rx_a_enabled = (command & 0x02) ? 0 :
             ((command & 0x01) || (duart_registers[5] & 0x02)) != 0;
+    }
+    if (header.version >= 9) {
+        /* The now-removed output stage's state; discarded, not restored. */
+        Eps16LegacyV9OutputStage discarded;
+        snapshot_read(&reader, &discarded, sizeof(discarded));
     }
 #undef SNAPSHOT_LOAD_FIELD
     snapshot_read(&reader, &es5505, sizeof(es5505));
