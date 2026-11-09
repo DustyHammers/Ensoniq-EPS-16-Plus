@@ -1,3 +1,4 @@
+#include "PanelEditor.h"
 #include "PluginProcessor.h"
 
 #include <juce_gui_basics/juce_gui_basics.h>
@@ -268,35 +269,27 @@ int main(int argc, char **argv) {
         editor->keyPressed(juce::KeyPress('A', command, 'A')) ||
         editor->keyPressed(juce::KeyPress('1', commandShift, '1')))
         return 25;
-    // Patch Select latch: effectiveHeld() is private, but it is mirrored
-    // through the inherited, public getToggleState() for exactly this.
-    auto makeClickEvent = [](juce::Component &target, juce::ModifierKeys mods) {
-        const auto now = juce::Time::getCurrentTime();
-        const auto centre = target.getLocalBounds().toFloat().getCentre();
-        return juce::MouseEvent(
-            juce::Desktop::getInstance().getMainMouseSource(), centre, mods,
-            0.0f, 0.0f, 0.0f, 0.0f, 0.0f, &target, &target, now, centre, now,
-            1, false);
-    };
-    auto *patchSelectLeft = dynamic_cast<juce::Button *>(
+    // Patch Select latch. juce::Button's mouse handlers are protected, so
+    // drive the press()/release() pair the handlers themselves call. The
+    // effective held state is mirrored through the inherited, public
+    // getToggleState().
+    auto *patchSelectLeft = dynamic_cast<Eps16PanelEditor::PatchSelectButton *>(
         editor->findChildWithID("patch-select-left-button"));
-    auto *patchSelectRight = dynamic_cast<juce::Button *>(
-        editor->findChildWithID("patch-select-right-button"));
+    auto *patchSelectRight =
+        dynamic_cast<Eps16PanelEditor::PatchSelectButton *>(
+            editor->findChildWithID("patch-select-right-button"));
     if (!patchSelectLeft || !patchSelectRight ||
         patchSelectLeft->getToggleState() ||
         patchSelectRight->getToggleState())
         return 27;
     // Option-click sets the effective held state without a mouse-down.
-    const auto optionClick = makeClickEvent(*patchSelectLeft, option);
-    patchSelectLeft->mouseDown(optionClick);
-    patchSelectLeft->mouseUp(optionClick);
+    patchSelectLeft->press(true);
+    patchSelectLeft->release();
     if (!patchSelectLeft->getToggleState() || patchSelectRight->getToggleState())
         return 28;
     // A subsequent plain click clears it; the other button is untouched.
-    const auto plainClick =
-        makeClickEvent(*patchSelectLeft, juce::ModifierKeys());
-    patchSelectLeft->mouseDown(plainClick);
-    patchSelectLeft->mouseUp(plainClick);
+    patchSelectLeft->press(false);
+    patchSelectLeft->release();
     if (patchSelectLeft->getToggleState() || patchSelectRight->getToggleState())
         return 29;
 

@@ -579,10 +579,8 @@ void Eps16PanelEditor::PatchSelectButton::paintButton(
     graphics.fillPath(arrow);
 }
 
-void Eps16PanelEditor::PatchSelectButton::mouseDown(
-    const juce::MouseEvent &event) {
-    if (auto *parent = getParentComponent()) parent->grabKeyboardFocus();
-    if (event.mods.isAltDown()) {
+void Eps16PanelEditor::PatchSelectButton::press(bool altDown) {
+    if (altDown) {
         // Option (Alt): toggle the latch; never starts a momentary press.
         latched = !latched;
         notifyChanged();
@@ -596,24 +594,31 @@ void Eps16PanelEditor::PatchSelectButton::mouseDown(
         heldByMouse = true;
         notifyChanged();
     }
+}
+
+void Eps16PanelEditor::PatchSelectButton::release() {
+    if (heldByMouse) {
+        heldByMouse = false;
+        notifyChanged();
+    }
+}
+
+void Eps16PanelEditor::PatchSelectButton::mouseDown(
+    const juce::MouseEvent &event) {
+    if (auto *parent = getParentComponent()) parent->grabKeyboardFocus();
+    press(event.mods.isAltDown());
     Button::mouseDown(event);
 }
 
 void Eps16PanelEditor::PatchSelectButton::mouseUp(
     const juce::MouseEvent &event) {
-    if (heldByMouse) {
-        heldByMouse = false;
-        notifyChanged();
-    }
+    release();
     Button::mouseUp(event);
 }
 
 void Eps16PanelEditor::PatchSelectButton::mouseExit(
     const juce::MouseEvent &event) {
-    if (heldByMouse && !event.mods.isAnyMouseButtonDown()) {
-        heldByMouse = false;
-        notifyChanged();
-    }
+    if (!event.mods.isAnyMouseButtonDown()) release();
     Button::mouseExit(event);
 }
 

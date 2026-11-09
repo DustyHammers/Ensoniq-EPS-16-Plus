@@ -91,6 +91,7 @@ private:
         juce::String label;
     };
 
+public:
     /* PSEL is one analog line shared by both physical buttons (no panel
        scan code - never route this through addPanelButton()). Held state
        has two independent sources: a plain click/hold is momentary, an
@@ -102,14 +103,24 @@ private:
        Eps16PanelEditor::updatePatchSelectAnalog() for how the editor
        combines both buttons' effectiveHeld() into the one analog write.
        effectiveHeld() is also mirrored through the inherited
-       getToggleState(), so it is observable from outside this private
-       nested class (e.g. from a test holding only a juce::Button*). */
+       getToggleState().
+
+       press()/release() carry the whole state transition; the mouse
+       handlers are thin wrappers over them. juce::Button's handlers are
+       protected, so a test cannot drive this through them - it calls
+       press()/release() instead, which is why the class is public. */
     class PatchSelectButton final : public juce::Button {
     public:
         explicit PatchSelectButton(bool pointsRight);
         [[nodiscard]] bool effectiveHeld() const {
             return latched || heldByMouse;
         }
+
+        /* altDown toggles the latch; a plain press on a latched button
+           clears it; otherwise the press is momentary. */
+        void press(bool altDown);
+        void release();
+
         void paintButton(juce::Graphics &, bool highlighted,
                          bool down) override;
         void mouseDown(const juce::MouseEvent &) override;
@@ -126,6 +137,7 @@ private:
         bool heldByMouse{};
     };
 
+private:
     class PianoKeyboard final : public juce::Component {
     public:
         explicit PianoKeyboard(Eps16PlusProcessor &);
