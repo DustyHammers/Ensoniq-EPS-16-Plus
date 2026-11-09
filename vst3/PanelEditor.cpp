@@ -1160,6 +1160,11 @@ Eps16PanelEditor::Eps16PanelEditor(Eps16PlusProcessor &processorToUse)
     // Large grey: the two Patch Select caps.
     patchSelectLeft.setSprite(spriteLargeGrey);
     patchSelectRight.setSprite(spriteLargeGrey);
+    /* Both caps start released, so drive PSEL to the "neither pressed"
+       band now. Without this a line left high by a previous editor
+       instance would stay high, because updatePatchSelectAnalog() only
+       runs on a change and nothing else writes analog channel 1. */
+    updatePatchSelectAnalog();
     // Small black: page buttons, nav, INST/SEQ SONG/SYSTEM MIDI/EFFECTS
     for (auto *button : pageButtons)
         if (button)
@@ -1211,6 +1216,11 @@ Eps16PanelEditor::Eps16PanelEditor(Eps16PlusProcessor &processorToUse)
 Eps16PanelEditor::~Eps16PanelEditor() {
     releaseArrowKeys();
     pianoKeyboard.releaseAllNotes();
+    /* Release PSEL. A latched cap holds the line high with no mouse
+       button down, and the emulator keeps running with the editor closed,
+       so without this the OS would see a patch held for ever with nothing
+       on screen to clear it. */
+    owner.enqueueAnalog(1, 0);
     masterVolume.setLookAndFeel(nullptr);
     dataEntry.setLookAndFeel(nullptr);
 }
