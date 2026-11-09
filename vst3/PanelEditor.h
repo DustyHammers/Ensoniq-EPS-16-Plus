@@ -121,6 +121,10 @@ public:
         void press(bool altDown);
         void release();
 
+        /* Two-frame sheet, same convention as PanelButton::setSprite():
+           released on top, pressed below, frame height = sheet height / 2. */
+        void setSprite(const juce::Image &sheet);
+
         void paintButton(juce::Graphics &, bool highlighted,
                          bool down) override;
         void mouseDown(const juce::MouseEvent &) override;
@@ -132,7 +136,7 @@ public:
     private:
         void notifyChanged();
 
-        const bool pointsRight;
+        juce::Image spriteSheet;
         bool latched{};
         bool heldByMouse{};
     };
@@ -194,6 +198,7 @@ private:
     juce::Image spriteSmallBlack;
     juce::Image spriteSmallGrey;
     juce::Image spriteLargeBlack;
+    juce::Image spriteLargeGrey;
     juce::Image sliderThumb;
     juce::Image trackLedSprite;
     std::map<juce::String, juce::Rectangle<int>> layoutOverrides;

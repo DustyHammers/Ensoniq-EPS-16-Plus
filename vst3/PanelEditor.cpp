@@ -525,10 +525,13 @@ void Eps16PanelEditor::DiskButton::paintButton(juce::Graphics &graphics,
     graphics.drawText(label, labelArea, juce::Justification::centred, false);
 }
 
-Eps16PanelEditor::PatchSelectButton::PatchSelectButton(bool pointsRightIn)
-    : Button(pointsRightIn ? "PATCH SELECT >" : "< PATCH SELECT"),
-      pointsRight(pointsRightIn) {
+Eps16PanelEditor::PatchSelectButton::PatchSelectButton(bool pointsRight)
+    : Button(pointsRight ? "PATCH SELECT >" : "< PATCH SELECT") {
     setWantsKeyboardFocus(false);
+}
+
+void Eps16PanelEditor::PatchSelectButton::setSprite(const juce::Image &sheet) {
+    spriteSheet = sheet;
 }
 
 void Eps16PanelEditor::PatchSelectButton::notifyChanged() {
@@ -542,41 +545,34 @@ void Eps16PanelEditor::PatchSelectButton::notifyChanged() {
 
 void Eps16PanelEditor::PatchSelectButton::paintButton(
     juce::Graphics &graphics, bool highlighted, bool down) {
-    const auto bounds = getLocalBounds().toFloat();
+    /* The caps are blank: the arrows are part of the printed panel
+       caption, not the keys. A latch counts as held so it stays visibly
+       pressed with no mouse button down. */
     const bool showPressed = down || latched;
 
-    /* Same mechanism as DiskButton::paintButton: brighten on
-       highlighted/down (here, down-or-latched, so a latch stays visibly
-       pressed), dim on !isEnabled(). */
-    const auto stateColour = [this, highlighted,
-                              showPressed](juce::Colour base) {
-        auto colour = base;
-        if (highlighted) colour = colour.brighter(0.10f);
-        if (showPressed) colour = colour.brighter(0.18f);
-        if (!isEnabled()) colour = colour.withMultipliedAlpha(0.42f);
-        return colour;
-    };
+    if (spriteSheet.isValid()) {
+        /* Same two-frame convention as PanelButton::paintButton - released
+           on top, pressed below - with the frame height taken from the
+           sheet rather than a fixed pixel count, so a 96x136 sheet of two
+           96x68 frames and any other trimmed size both split correctly. */
+        const int frameHeight = spriteSheet.getHeight() / 2;
+        graphics.drawImage(spriteSheet,
+                           0, 0, getWidth(), getHeight(),
+                           0, showPressed ? frameHeight : 0,
+                           spriteSheet.getWidth(), frameHeight,
+                           false);
+        return;
+    }
 
-    // Moulded body: lighter grey than the black keypad keys.
-    graphics.setColour(stateColour(juce::Colour(0xff5c5c5e)));
+    /* No sheet (sprite_large_grey.png absent): procedural moulded cap in
+       the same lighter grey as the hardware's patch-select keys. */
+    const auto bounds = getLocalBounds().toFloat();
+    auto colour = juce::Colour(0xff5c5c5e);
+    if (highlighted) colour = colour.brighter(0.10f);
+    if (showPressed) colour = colour.brighter(0.18f);
+    if (!isEnabled()) colour = colour.withMultipliedAlpha(0.42f);
+    graphics.setColour(colour);
     graphics.fillRoundedRectangle(bounds, bounds.getHeight() * 0.2f);
-
-    // Arrow glyph pointing toward the panel edge this button sits at.
-    const float centreX = bounds.getCentreX();
-    const float centreY = bounds.getCentreY();
-    const float halfWidth = bounds.getHeight() * 0.28f;
-    const float halfHeight = bounds.getHeight() * 0.22f;
-    juce::Path arrow;
-    if (pointsRight)
-        arrow.addTriangle(centreX - halfWidth, centreY - halfHeight,
-                          centreX - halfWidth, centreY + halfHeight,
-                          centreX + halfWidth, centreY);
-    else
-        arrow.addTriangle(centreX + halfWidth, centreY - halfHeight,
-                          centreX + halfWidth, centreY + halfHeight,
-                          centreX - halfWidth, centreY);
-    graphics.setColour(stateColour(juce::Colour(0xff1a1a1b)));
-    graphics.fillPath(arrow);
 }
 
 void Eps16PanelEditor::PatchSelectButton::press(bool altDown) {
@@ -878,6 +874,10 @@ void Eps16PanelEditor::loadPanelImages() {
             DBG("skin/" << pngName
                         << ": failed to decode, using built-in artwork");
         }
+        /* binaryData == nullptr means the artwork is not baked into the
+           binary yet, so the sheet is skin-only: callers must cope with an
+           invalid Image. */
+        if (binaryData == nullptr || binarySize == 0) return juce::Image();
         return juce::ImageCache::getFromMemory(binaryData, binarySize);
     };
     panelBackground = loadSkinnable("panel_background.png",
@@ -892,6 +892,14 @@ void Eps16PanelEditor::loadPanelImages() {
     spriteLargeBlack = loadSkinnable("sprite_large_black.png",
                                      BinaryData::sprite_large_black_png,
                                      BinaryData::sprite_large_black_pngSize);
+    /* Patch Select caps: 96x136, two 96x68 frames (released on top,
+       pressed below), blank - the arrows are printed in the panel caption.
+       Not baked in yet, so this is skin-only and PatchSelectButton falls
+       back to a procedural cap when the file is absent. To bake it: add
+       Resources/sprite_large_grey.png to juce_add_binary_data() in
+       vst3/CMakeLists.txt and pass BinaryData::sprite_large_grey_png /
+       _pngSize here in place of the nullptr, 0. */
+    spriteLargeGrey = loadSkinnable("sprite_large_grey.png", nullptr, 0);
     sliderThumb = loadSkinnable("slider_thumb.png", BinaryData::slider_thumb_png,
                                 BinaryData::slider_thumb_pngSize);
     faderLookAndFeel.thumbImage = sliderThumb;
@@ -1149,6 +1157,9 @@ Eps16PanelEditor::Eps16PanelEditor(Eps16PlusProcessor &processorToUse)
         button->setSprite(spriteLargeBlack, PanelButton::Style::LargeBlack);
     cancelButton->setSprite(spriteLargeBlack, PanelButton::Style::LargeBlack);
     enterButton->setSprite(spriteLargeBlack, PanelButton::Style::LargeBlack);
+    // Large grey: the two Patch Select caps.
+    patchSelectLeft.setSprite(spriteLargeGrey);
+    patchSelectRight.setSprite(spriteLargeGrey);
     // Small black: page buttons, nav, INST/SEQ SONG/SYSTEM MIDI/EFFECTS
     for (auto *button : pageButtons)
         if (button)
@@ -1513,87 +1524,87 @@ void Eps16PanelEditor::resized() {
        x/y/w/h below are only the compiled-in fallback. */
 
     // ── VFD (size locked, position centred) ──────────────────────────────
-    vfd.setBounds(rackRect(designRect("vfd", 453, 62, 444, 101)));
+    vfd.setBounds(rackRect(designRect("vfd", 452, 61, 447, 103)));
     vfd.setFont(juce::Font(juce::FontOptions("Menlo", 17.0f * scale,
                                              juce::Font::plain)));
     status.setBounds({});
 
     // ── Faders (w=76, h=244; positions SWAPPED vs original) ──────────────
     masterVolume.setBounds(
-        rackRect(designRect("masterVolume", 36, 62, 76, 244)));   // left side
+        rackRect(designRect("masterVolume", 134, 143, 58, 192)));   // left side
     dataEntry.setBounds(
-        rackRect(designRect("dataEntry", 1158, 62, 76, 244)));    // swapped right
+        rackRect(designRect("dataEntry", 1150, 143, 58, 192)));    // swapped right
 
-    // ── Page buttons  42×22  cols: 140/195/250  rows: 62/124/186/278 ─────
-    const int pageX[3] = {140, 195, 250};
-    const int pageY[4] = {62, 124, 186, 278};
+    // ── Page buttons  48×19  cols: 242/292/342  rows: 50/101/153/204 ─────
+    const int pageX[3] = {242, 292, 342};
+    const int pageY[4] = {50, 101, 153, 204};
     for (std::size_t index = 0; index < 9; ++index)
         pageButtons[index]->setBounds(rackRect(designRect(
             "pageButtons[" + juce::String((int)index) + "]",
-            pageX[index % 3], pageY[index / 3], 42, 22)));
+            pageX[index % 3], pageY[index / 3], 48, 19)));
     pageButtons[9]->setBounds(rackRect(
-        designRect("pageButtons[9]", 140, 278, 42, 22)));   // SAMPLE
+        designRect("pageButtons[9]", 242, 204, 48, 19)));   // SAMPLE
     pageButtons[10]->setBounds(rackRect(
-        designRect("pageButtons[10]", 195, 278, 42, 22)));  // TRACK
+        designRect("pageButtons[10]", 292, 204, 48, 19)));  // TRACK
     pageButtons[11]->setBounds(rackRect(
-        designRect("pageButtons[11]", 250, 278, 42, 22)));  // EFFECT SELECT/BYPASS
+        designRect("pageButtons[11]", 342, 204, 48, 19)));  // EFFECT SELECT/BYPASS
 
-    // ── Mode buttons  42×22  horizontal row below VFD ─────────────────────
+    // ── Mode buttons  48×19  horizontal row below VFD ─────────────────────
     modeButtons[0]->setBounds(rackRect(
-        designRect("modeButtons[0]", 453, 200, 42, 22)));  // LOAD   (grey sprite)
+        designRect("modeButtons[0]", 477, 206, 48, 19)));  // LOAD   (grey sprite)
     modeButtons[1]->setBounds(rackRect(
-        designRect("modeButtons[1]", 505, 200, 42, 22)));  // CMD    (grey sprite)
+        designRect("modeButtons[1]", 527, 206, 48, 19)));  // CMD    (grey sprite)
     modeButtons[2]->setBounds(rackRect(
-        designRect("modeButtons[2]", 557, 200, 42, 22)));  // EDIT   (grey sprite)
+        designRect("modeButtons[2]", 577, 206, 48, 19)));  // EDIT   (grey sprite)
     modeButtons[3]->setBounds(rackRect(
-        designRect("modeButtons[3]", 649, 200, 42, 22)));  // INST
+        designRect("modeButtons[3]", 677, 206, 48, 19)));  // INST
     modeButtons[4]->setBounds(rackRect(
-        designRect("modeButtons[4]", 701, 200, 42, 22)));  // SEQ SONG
+        designRect("modeButtons[4]", 727, 206, 48, 19)));  // SEQ SONG
     modeButtons[5]->setBounds(rackRect(
-        designRect("modeButtons[5]", 753, 200, 42, 22)));  // SYSTEM MIDI
+        designRect("modeButtons[5]", 777, 206, 48, 19)));  // SYSTEM MIDI
     modeButtons[6]->setBounds(rackRect(
-        designRect("modeButtons[6]", 805, 200, 42, 22)));  // EFFECTS
+        designRect("modeButtons[6]", 827, 206, 48, 19)));  // EFFECTS
 
-    // ── Track buttons  48×34  centred, stride 55 ──────────────────────────
-    // ── Track LEDs  16×16  one per track, sprite frame swap ──────────────
+    // ── Track buttons  48×34  centred, stride 50 ──────────────────────────
+    // ── Track LEDs  16×10  one per track, sprite frame swap ──────────────
     for (std::size_t index = 0; index < trackButtons.size(); ++index) {
         const auto trackButtonDesign = designRect(
             "trackButtons[" + juce::String((int)index) + "]",
-            459 + (int)index * 55, 266, 48, 34);
+            476 + (int)index * 50, 294, 48, 34);
         trackButtons[index]->setBounds(rackRect(trackButtonDesign));
 
-        // Default: centred horizontally on the track button, vertically
-        // centred 18 design units above the button's top edge.
+        // Default: centred horizontally on the track button, 24 design
+        // units above the button's top edge.
         const int ledDefaultX = trackButtonDesign.getCentreX() - 8;
-        const int ledDefaultY = trackButtonDesign.getY() - 18 - 8;
+        const int ledDefaultY = trackButtonDesign.getY() - 24;
         trackLedBounds[index] = rackRect(designRect(
             "trackLeds[" + juce::String((int)index) + "]",
-            ledDefaultX, ledDefaultY, 16, 16));
+            ledDefaultX, ledDefaultY, 16, 10));
     }
 
-    // ── Sequencer  42×22  top-right  (grey sprite) ────────────────────────
+    // ── Sequencer  48×19  top-right  (grey sprite) ────────────────────────
     sequencerButtons[0]->setBounds(rackRect(
-        designRect("sequencerButtons[0]", 948, 22, 42, 22)));   // RECORD
+        designRect("sequencerButtons[0]", 961, 50, 48, 19)));   // RECORD
     sequencerButtons[1]->setBounds(rackRect(
-        designRect("sequencerButtons[1]", 1000, 22, 42, 22)));  // STOP/CONT
+        designRect("sequencerButtons[1]", 1011, 50, 48, 19)));  // STOP/CONT
     sequencerButtons[2]->setBounds(rackRect(
-        designRect("sequencerButtons[2]", 1052, 22, 42, 22)));  // PLAY
+        designRect("sequencerButtons[2]", 1061, 50, 48, 19)));  // PLAY
 
     // ── Navigation  42×22 ──────────────────────────────────────────────────
     upButton->setBounds(rackRect(
-        designRect("upButton", 1004, 167, 42, 22)));    // UP — above mode row
+        designRect("upButton", 1011, 152, 48, 19)));    // UP — above mode row
     leftButton->setBounds(rackRect(
-        designRect("leftButton", 960, 200, 42, 22)));   // LEFT  } same row as
+        designRect("leftButton", 961, 205, 48, 19)));   // LEFT  } same row as
     downButton->setBounds(rackRect(
-        designRect("downButton", 1004, 200, 42, 22)));  // DOWN  } mode buttons
+        designRect("downButton", 1011, 205, 48, 19)));  // DOWN  } mode buttons
     rightButton->setBounds(rackRect(
-        designRect("rightButton", 1048, 200, 42, 22))); // RIGHT }
+        designRect("rightButton", 1061, 205, 48, 19))); // RIGHT }
 
     // ── No·Cancel / Yes·Enter  48×34  at track-button level ───────────────
     cancelButton->setBounds(rackRect(
-        designRect("cancelButton", 957, 266, 48, 34)));
+        designRect("cancelButton", 960, 294, 48, 34)));
     enterButton->setBounds(rackRect(
-        designRect("enterButton", 1045, 266, 48, 34)));
+        designRect("enterButton", 1060, 294, 48, 34)));
 
     // ── Patch Select  42×16  below the SAMPLE/TRACK/EFFECT keypad row
     //    (ends y=300), left of the INSTRUMENT·TRACK row (starts x=459),
@@ -1601,21 +1612,21 @@ void Eps16PanelEditor::resized() {
     //    position for the printed "PAGE" rule below the keypad, so this
     //    sits in the clear gap above the keyboard toggle (y=358). ───────
     patchSelectLeft.setBounds(rackRect(
-        designRect("patchSelectLeft", 140, 308, 42, 16)));
+        designRect("patchSelectLeft", 242, 294, 48, 34)));
     patchSelectRight.setBounds(rackRect(
-        designRect("patchSelectRight", 250, 308, 42, 16)));
+        designRect("patchSelectRight", 342, 294, 48, 34)));
 
     // ── Disk buttons  78×62  vertical stack, SWAPPED to far right ─────────
     // DiskButton::paintButton() remains PROCEDURAL — no sprite change.
     osDiskButton.setBounds(rackRect(
-        designRect("osDiskButton", 1262, 62, 78, 62)));    // OS
+        designRect("osDiskButton", 1262, 89, 48, 48)));    // OS
     newDiskButton.setBounds(rackRect(
-        designRect("newDiskButton", 1262, 130, 78, 62)));  // NEW
+        designRect("newDiskButton", 1262, 157, 48, 48)));  // NEW
     loadDiskButton.setBounds(rackRect(
-        designRect("loadDiskButton", 1262, 198, 78, 62))); // LOAD
+        designRect("loadDiskButton", 1262, 225, 48, 48))); // LOAD
     saveDiskButton.setBounds(rackRect(
-        designRect("saveDiskButton", 1262, 266, 78, 62))); // SAVE
-    diskName.setBounds(rackRect(designRect("diskName", 1262, 14, 168, 22)));
+        designRect("saveDiskButton", 1262, 293, 48, 48))); // SAVE
+    diskName.setBounds(rackRect(designRect("diskName", 1165, 14, 168, 22)));
     diskName.setFont(juce::Font(juce::FontOptions(
         "Helvetica Neue", 10.0f * scale, juce::Font::plain)));
 
