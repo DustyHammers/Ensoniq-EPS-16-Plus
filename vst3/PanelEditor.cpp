@@ -525,6 +525,98 @@ void Eps16PanelEditor::DiskButton::paintButton(juce::Graphics &graphics,
     graphics.drawText(label, labelArea, juce::Justification::centred, false);
 }
 
+Eps16PanelEditor::PatchSelectButton::PatchSelectButton(bool pointsRightIn)
+    : Button(pointsRightIn ? "PATCH SELECT >" : "< PATCH SELECT"),
+      pointsRight(pointsRightIn) {
+    setWantsKeyboardFocus(false);
+}
+
+void Eps16PanelEditor::PatchSelectButton::notifyChanged() {
+    // Published through the inherited toggle-state so effectiveHeld() is
+    // observable from outside this private nested class (as plain
+    // juce::Button::getToggleState()) without a second, parallel flag.
+    setToggleState(effectiveHeld(), juce::dontSendNotification);
+    repaint();
+    if (onEffectiveHeldChanged) onEffectiveHeldChanged();
+}
+
+void Eps16PanelEditor::PatchSelectButton::paintButton(
+    juce::Graphics &graphics, bool highlighted, bool down) {
+    const auto bounds = getLocalBounds().toFloat();
+    const bool showPressed = down || latched;
+
+    /* Same mechanism as DiskButton::paintButton: brighten on
+       highlighted/down (here, down-or-latched, so a latch stays visibly
+       pressed), dim on !isEnabled(). */
+    const auto stateColour = [this, highlighted,
+                              showPressed](juce::Colour base) {
+        auto colour = base;
+        if (highlighted) colour = colour.brighter(0.10f);
+        if (showPressed) colour = colour.brighter(0.18f);
+        if (!isEnabled()) colour = colour.withMultipliedAlpha(0.42f);
+        return colour;
+    };
+
+    // Moulded body: lighter grey than the black keypad keys.
+    graphics.setColour(stateColour(juce::Colour(0xff5c5c5e)));
+    graphics.fillRoundedRectangle(bounds, bounds.getHeight() * 0.2f);
+
+    // Arrow glyph pointing toward the panel edge this button sits at.
+    const float centreX = bounds.getCentreX();
+    const float centreY = bounds.getCentreY();
+    const float halfWidth = bounds.getHeight() * 0.28f;
+    const float halfHeight = bounds.getHeight() * 0.22f;
+    juce::Path arrow;
+    if (pointsRight)
+        arrow.addTriangle(centreX - halfWidth, centreY - halfHeight,
+                          centreX - halfWidth, centreY + halfHeight,
+                          centreX + halfWidth, centreY);
+    else
+        arrow.addTriangle(centreX + halfWidth, centreY - halfHeight,
+                          centreX + halfWidth, centreY + halfHeight,
+                          centreX - halfWidth, centreY);
+    graphics.setColour(stateColour(juce::Colour(0xff1a1a1b)));
+    graphics.fillPath(arrow);
+}
+
+void Eps16PanelEditor::PatchSelectButton::mouseDown(
+    const juce::MouseEvent &event) {
+    if (auto *parent = getParentComponent()) parent->grabKeyboardFocus();
+    if (event.mods.isAltDown()) {
+        // Option (Alt): toggle the latch; never starts a momentary press.
+        latched = !latched;
+        notifyChanged();
+    } else if (latched) {
+        // A plain click on a latched button clears the latch rather than
+        // starting a new momentary press, so there is always an obvious
+        // way out.
+        latched = false;
+        notifyChanged();
+    } else {
+        heldByMouse = true;
+        notifyChanged();
+    }
+    Button::mouseDown(event);
+}
+
+void Eps16PanelEditor::PatchSelectButton::mouseUp(
+    const juce::MouseEvent &event) {
+    if (heldByMouse) {
+        heldByMouse = false;
+        notifyChanged();
+    }
+    Button::mouseUp(event);
+}
+
+void Eps16PanelEditor::PatchSelectButton::mouseExit(
+    const juce::MouseEvent &event) {
+    if (heldByMouse && !event.mods.isAnyMouseButtonDown()) {
+        heldByMouse = false;
+        notifyChanged();
+    }
+    Button::mouseExit(event);
+}
+
 Eps16PanelEditor::PianoKeyboard::PianoKeyboard(
     Eps16PlusProcessor &processorToUse)
     : processor(processorToUse) {
@@ -1024,6 +1116,23 @@ Eps16PanelEditor::Eps16PanelEditor(Eps16PlusProcessor &processorToUse)
     sequencerButtons[2]->setShiftChordCode(0x03);
     sequencerButtons[2]->setTooltip("PLAY (Shift-click: RECORD + PLAY)");
 
+    // Patch Select: one analog line (PSEL), not a panel scan code - see
+    // updatePatchSelectAnalog() for the combined write.
+    patchSelectLeft.setComponentID("patch-select-left-button");
+    patchSelectLeft.setTooltip(
+        "PATCH SELECT - click and hold, or Option-click to latch");
+    patchSelectLeft.onEffectiveHeldChanged = [this] {
+        updatePatchSelectAnalog();
+    };
+    addAndMakeVisible(patchSelectLeft);
+    patchSelectRight.setComponentID("patch-select-right-button");
+    patchSelectRight.setTooltip(
+        "PATCH SELECT - click and hold, or Option-click to latch");
+    patchSelectRight.onEffectiveHeldChanged = [this] {
+        updatePatchSelectAnalog();
+    };
+    addAndMakeVisible(patchSelectRight);
+
     // Small grey: LOAD/CMD/EDIT + RECORD/STOP*CONT/PLAY
     for (int index : {0, 1, 2})
         modeButtons[index]->setSprite(spriteSmallGrey,
@@ -1210,6 +1319,17 @@ void Eps16PanelEditor::focusLost(FocusChangeType cause) {
     pianoKeyboard.releaseAllNotes();
     pianoKeyboard.releasePerformanceControls();
     AudioProcessorEditor::focusLost(cause);
+}
+
+void Eps16PanelEditor::updatePatchSelectAnalog() {
+    const bool left = patchSelectLeft.effectiveHeld();
+    const bool right = patchSelectRight.effectiveHeld();
+    // Centres of the OS's four threshold bands (<=80, 81-340, 341-628,
+    // >628 out of 1023) - see native/rom_probe.c's ADC channel 1 decode
+    // and the OS's own thresholding at ROM 0xc0c81a.
+    const std::uint16_t value =
+        left && right ? 1023 : right ? 480 : left ? 200 : 0;
+    owner.enqueueAnalog(1, value);
 }
 
 void Eps16PanelEditor::updateDiskName() {
@@ -1469,6 +1589,16 @@ void Eps16PanelEditor::resized() {
         designRect("cancelButton", 957, 266, 48, 34)));
     enterButton->setBounds(rackRect(
         designRect("enterButton", 1045, 266, 48, 34)));
+
+    // ── Patch Select  42×16  below the SAMPLE/TRACK/EFFECT keypad row
+    //    (ends y=300), left of the INSTRUMENT·TRACK row (starts x=459),
+    //    shorter than a keypad button. No source gives an exact pixel
+    //    position for the printed "PAGE" rule below the keypad, so this
+    //    sits in the clear gap above the keyboard toggle (y=358). ───────
+    patchSelectLeft.setBounds(rackRect(
+        designRect("patchSelectLeft", 140, 308, 42, 16)));
+    patchSelectRight.setBounds(rackRect(
+        designRect("patchSelectRight", 250, 308, 42, 16)));
 
     // ── Disk buttons  78×62  vertical stack, SWAPPED to far right ─────────
     // DiskButton::paintButton() remains PROCEDURAL — no sprite change.

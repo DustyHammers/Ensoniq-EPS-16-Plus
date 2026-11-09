@@ -388,6 +388,13 @@ target_link_libraries(eps16_command_instrument_workflow_test PRIVATE
   eps16_probe_machine
 )
 
+add_executable(eps16_patch_select_workflow_test
+  PatchSelectWorkflowTest.c
+)
+target_link_libraries(eps16_patch_select_workflow_test PRIVATE
+  eps16_probe_machine
+)
+
 add_executable(eps16_performance_midi_test PerformanceMidiTest.c)
 target_link_libraries(eps16_performance_midi_test PRIVATE eps16_probe_machine)
 

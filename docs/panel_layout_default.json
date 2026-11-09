@@ -46,6 +46,8 @@
   "rightButton": [1048, 200, 42, 22],
   "cancelButton": [957, 266, 48, 34],
   "enterButton": [1045, 266, 48, 34],
+  "patchSelectLeft": [140, 308, 42, 16],
+  "patchSelectRight": [250, 308, 42, 16],
   "osDiskButton": [1262, 62, 78, 62],
   "newDiskButton": [1262, 130, 78, 62],
   "loadDiskButton": [1262, 198, 78, 62],

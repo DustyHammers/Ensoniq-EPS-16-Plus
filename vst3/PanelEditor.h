@@ -6,6 +6,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 
 #include <array>
+#include <functional>
 #include <map>
 #include <memory>
 #include <vector>
@@ -90,6 +91,41 @@ private:
         juce::String label;
     };
 
+    /* PSEL is one analog line shared by both physical buttons (no panel
+       scan code - never route this through addPanelButton()). Held state
+       has two independent sources: a plain click/hold is momentary, an
+       Option(Alt)-click toggles a latch that holds with no mouse button
+       down; a plain click on an already-latched button clears the latch
+       rather than starting a new momentary press. effectiveHeld() is
+       their OR, and a latched button paints in its pressed state so the
+       latch stays visible. See
+       Eps16PanelEditor::updatePatchSelectAnalog() for how the editor
+       combines both buttons' effectiveHeld() into the one analog write.
+       effectiveHeld() is also mirrored through the inherited
+       getToggleState(), so it is observable from outside this private
+       nested class (e.g. from a test holding only a juce::Button*). */
+    class PatchSelectButton final : public juce::Button {
+    public:
+        explicit PatchSelectButton(bool pointsRight);
+        [[nodiscard]] bool effectiveHeld() const {
+            return latched || heldByMouse;
+        }
+        void paintButton(juce::Graphics &, bool highlighted,
+                         bool down) override;
+        void mouseDown(const juce::MouseEvent &) override;
+        void mouseUp(const juce::MouseEvent &) override;
+        void mouseExit(const juce::MouseEvent &) override;
+
+        std::function<void()> onEffectiveHeldChanged;
+
+    private:
+        void notifyChanged();
+
+        const bool pointsRight;
+        bool latched{};
+        bool heldByMouse{};
+    };
+
     class PianoKeyboard final : public juce::Component {
     public:
         explicit PianoKeyboard(Eps16PlusProcessor &);
@@ -136,6 +172,7 @@ private:
     void loadLayoutOverrides();
     juce::Rectangle<int> designRect(const juce::String &name, int x, int y,
                                     int width, int height) const;
+    void updatePatchSelectAnalog();
 
     Eps16PlusProcessor &owner;
     VfdLabel vfd;
@@ -176,6 +213,8 @@ private:
     PanelButton *cancelButton{};
     PanelButton *enterButton{};
     std::array<bool, 4> arrowKeysDown{};
+    PatchSelectButton patchSelectLeft{false};
+    PatchSelectButton patchSelectRight{true};
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(Eps16PanelEditor)
 };
 
