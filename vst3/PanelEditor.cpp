@@ -546,9 +546,9 @@ void Eps16PanelEditor::PatchSelectButton::notifyChanged() {
 void Eps16PanelEditor::PatchSelectButton::paintButton(
     juce::Graphics &graphics, bool highlighted, bool down) {
     /* The caps are blank: the arrows are part of the printed panel
-       caption, not the keys. A latch counts as held so it stays visibly
+       caption, not the keys. A key hold counts as held so the cap looks
        pressed with no mouse button down. */
-    const bool showPressed = down || latched;
+    const bool showPressed = down || heldByKey;
 
     if (spriteSheet.isValid()) {
         /* Same two-frame convention as PanelButton::paintButton - released
@@ -575,18 +575,8 @@ void Eps16PanelEditor::PatchSelectButton::paintButton(
     graphics.fillRoundedRectangle(bounds, bounds.getHeight() * 0.2f);
 }
 
-void Eps16PanelEditor::PatchSelectButton::press(bool altDown) {
-    if (altDown) {
-        // Option (Alt): toggle the latch; never starts a momentary press.
-        latched = !latched;
-        notifyChanged();
-    } else if (latched) {
-        // A plain click on a latched button clears the latch rather than
-        // starting a new momentary press, so there is always an obvious
-        // way out.
-        latched = false;
-        notifyChanged();
-    } else {
+void Eps16PanelEditor::PatchSelectButton::press() {
+    if (!heldByMouse) {
         heldByMouse = true;
         notifyChanged();
     }
@@ -599,10 +589,16 @@ void Eps16PanelEditor::PatchSelectButton::release() {
     }
 }
 
+void Eps16PanelEditor::PatchSelectButton::setKeyHeld(bool isDown) {
+    if (heldByKey == isDown) return;
+    heldByKey = isDown;
+    notifyChanged();
+}
+
 void Eps16PanelEditor::PatchSelectButton::mouseDown(
     const juce::MouseEvent &event) {
     if (auto *parent = getParentComponent()) parent->grabKeyboardFocus();
-    press(event.mods.isAltDown());
+    press();
     Button::mouseDown(event);
 }
 
@@ -1133,14 +1129,16 @@ Eps16PanelEditor::Eps16PanelEditor(Eps16PlusProcessor &processorToUse)
     // updatePatchSelectAnalog() for the combined write.
     patchSelectLeft.setComponentID("patch-select-left-button");
     patchSelectLeft.setTooltip(
-        "PATCH SELECT - click and hold, or Option-click to latch");
+        "PATCH SELECT (left) - click and hold, or hold Z. Hold Z and X "
+        "together for both.");
     patchSelectLeft.onEffectiveHeldChanged = [this] {
         updatePatchSelectAnalog();
     };
     addAndMakeVisible(patchSelectLeft);
     patchSelectRight.setComponentID("patch-select-right-button");
     patchSelectRight.setTooltip(
-        "PATCH SELECT - click and hold, or Option-click to latch");
+        "PATCH SELECT (right) - click and hold, or hold X. Hold Z and X "
+        "together for both.");
     patchSelectRight.onEffectiveHeldChanged = [this] {
         updatePatchSelectAnalog();
     };
@@ -1216,10 +1214,10 @@ Eps16PanelEditor::Eps16PanelEditor(Eps16PlusProcessor &processorToUse)
 Eps16PanelEditor::~Eps16PanelEditor() {
     releaseArrowKeys();
     pianoKeyboard.releaseAllNotes();
-    /* Release PSEL. A latched cap holds the line high with no mouse
-       button down, and the emulator keeps running with the editor closed,
-       so without this the OS would see a patch held for ever with nothing
-       on screen to clear it. */
+    /* Release PSEL. A cap held by its key holds the line high with no
+       mouse button down, and the emulator keeps running with the editor
+       closed, so without this the OS could see a patch held for ever
+       with nothing on screen to clear it. */
     owner.enqueueAnalog(1, 0);
     masterVolume.setLookAndFeel(nullptr);
     dataEntry.setLookAndFeel(nullptr);
@@ -1294,6 +1292,38 @@ bool Eps16PanelEditor::updateArrowKey(int keyCode, bool isDown) {
     return false;
 }
 
+bool Eps16PanelEditor::pressPatchSelectKey(int keyCode) {
+    /* Momentary, like the hardware caps. Both keys are tracked
+       independently so holding Z and X together holds both caps - the
+       thing a single pointer cannot do, and the reason these exist. */
+    static constexpr std::array<int, 2> keyCodes{'Z', 'X'};
+    const std::array<PatchSelectButton *, 2> caps{
+        &patchSelectLeft, &patchSelectRight
+    };
+    for (std::size_t index = 0; index < keyCodes.size(); ++index) {
+        if (keyCode != keyCodes[index]) continue;
+        if (!patchSelectKeysDown[index]) {
+            patchSelectKeysDown[index] = true;
+            caps[index]->setKeyHeld(true);
+        }
+        return true;
+    }
+    return false;
+}
+
+void Eps16PanelEditor::refreshPatchSelectKeys() {
+    static constexpr std::array<int, 2> keyCodes{'Z', 'X'};
+    const std::array<PatchSelectButton *, 2> caps{
+        &patchSelectLeft, &patchSelectRight
+    };
+    for (std::size_t index = 0; index < keyCodes.size(); ++index) {
+        if (!patchSelectKeysDown[index]) continue;
+        if (juce::KeyPress::isKeyCurrentlyDown(keyCodes[index])) continue;
+        patchSelectKeysDown[index] = false;
+        caps[index]->setKeyHeld(false);
+    }
+}
+
 bool Eps16PanelEditor::keyPressed(const juce::KeyPress &key) {
     const auto modifiers = key.getModifiers();
     const bool noAdditionalModifiers = !modifiers.isShiftDown();
@@ -1313,7 +1343,16 @@ bool Eps16PanelEditor::keyPressed(const juce::KeyPress &key) {
         pageButtons[pageIndex]->triggerShortcut();
         return true;
     }
-    return updateArrowKey(key.getKeyCode(), true);
+    /* Unmodified Z / X only. Cmd+Z must stay the host's undo, and a cap
+       is never pressed from the key-state poll, so no modified chord can
+       drive one. Auto-repeat is harmless: pressPatchSelectKey() is a
+       no-op once the key is already marked down. */
+    if (modifiers.isCtrlDown() || modifiers.isCommandDown() ||
+        modifiers.isAltDown() || modifiers.isShiftDown()) {
+        return updateArrowKey(keyCode, true);
+    }
+    if (pressPatchSelectKey(keyCode)) return true;
+    return updateArrowKey(keyCode, true);
 }
 
 bool Eps16PanelEditor::keyStateChanged(bool) {
@@ -1329,6 +1368,10 @@ bool Eps16PanelEditor::keyStateChanged(bool) {
     const bool hasArrowDown = std::any_of(arrowKeysDown.begin(),
                                           arrowKeysDown.end(),
                                           [](bool down) { return down; });
+    /* The only way a Patch Select key release is seen: JUCE has no
+       per-key up callback. The timer polls too, in case focus moves away
+       while a key is down and no state change ever arrives here. */
+    refreshPatchSelectKeys();
     return hadArrowDown || hasArrowDown;
 }
 
@@ -1415,6 +1458,9 @@ void Eps16PanelEditor::timerCallback() {
     const bool slowUpdate = (timerTicks++ % 8U) == 0;
     const auto nowMs = juce::Time::getMillisecondCounterHiRes();
     for (auto &button : buttons) button->updateActivationGlow(nowMs);
+    /* Safety net for a Patch Select key held while focus moves away, so
+       no keyStateChanged() arrives to clear it. */
+    refreshPatchSelectKeys();
     if (slowUpdate) {
         owner.refreshResourcePaths();
         const juce::File osDisk(owner.getResourcePath(

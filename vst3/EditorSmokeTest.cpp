@@ -269,10 +269,10 @@ int main(int argc, char **argv) {
         editor->keyPressed(juce::KeyPress('A', command, 'A')) ||
         editor->keyPressed(juce::KeyPress('1', commandShift, '1')))
         return 25;
-    // Patch Select latch. juce::Button's mouse handlers are protected, so
-    // drive the press()/release() pair the handlers themselves call. The
-    // effective held state is mirrored through the inherited, public
-    // getToggleState().
+    /* Patch Select. The effective held state is mirrored through the
+       inherited, public getToggleState(). juce::Button's mouse handlers
+       are protected, so the mouse path is driven through the
+       press()/release() pair the handlers themselves call. */
     auto *patchSelectLeft = dynamic_cast<Eps16PanelEditor::PatchSelectButton *>(
         editor->findChildWithID("patch-select-left-button"));
     auto *patchSelectRight =
@@ -282,16 +282,42 @@ int main(int argc, char **argv) {
         patchSelectLeft->getToggleState() ||
         patchSelectRight->getToggleState())
         return 27;
-    // Option-click sets the effective held state without a mouse-down.
-    patchSelectLeft->press(true);
-    patchSelectLeft->release();
+    // Mouse: momentary, and it must not stick.
+    patchSelectLeft->press();
     if (!patchSelectLeft->getToggleState() || patchSelectRight->getToggleState())
         return 28;
-    // A subsequent plain click clears it; the other button is untouched.
-    patchSelectLeft->press(false);
     patchSelectLeft->release();
     if (patchSelectLeft->getToggleState() || patchSelectRight->getToggleState())
         return 29;
+    /* Keys: unmodified Z and X hold the two caps, and both at once hold
+       both - the case a single pointer cannot reach. Release is only ever
+       observed by polling the real keyboard, which reports nothing held
+       here, so keyStateChanged() clears them. */
+    if (!editor->keyPressed(juce::KeyPress('Z')) ||
+        !patchSelectLeft->getToggleState() ||
+        patchSelectRight->getToggleState())
+        return 36;
+    if (!editor->keyPressed(juce::KeyPress('X')) ||
+        !patchSelectLeft->getToggleState() ||
+        !patchSelectRight->getToggleState())
+        return 37;
+    // Auto-repeat while held must not toggle anything off.
+    if (!editor->keyPressed(juce::KeyPress('Z')) ||
+        !patchSelectLeft->getToggleState() ||
+        !patchSelectRight->getToggleState())
+        return 38;
+    editor->keyStateChanged(false);
+    if (patchSelectLeft->getToggleState() || patchSelectRight->getToggleState())
+        return 39;
+    /* Cmd+Z has to stay the host's undo, and no modified chord may press
+       a cap - a press only ever comes from an unmodified key event, never
+       from the key-state poll. */
+    if (editor->keyPressed(juce::KeyPress('Z', command, 'Z')) ||
+        editor->keyPressed(juce::KeyPress('Z', control, 'Z')) ||
+        editor->keyPressed(juce::KeyPress('X', option, 'X')) ||
+        patchSelectLeft->getToggleState() ||
+        patchSelectRight->getToggleState())
+        return 40;
 
     editor->focusLost(juce::Component::focusChangedDirectly);
     dataEntry->setValue(512, juce::dontSendNotification);

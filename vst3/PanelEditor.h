@@ -93,19 +93,18 @@ private:
 
 public:
     /* PSEL is one analog line shared by both physical buttons (no panel
-       scan code - never route this through addPanelButton()). Held state
-       has two independent sources: a plain click/hold is momentary, an
-       Option(Alt)-click toggles a latch that holds with no mouse button
-       down; a plain click on an already-latched button clears the latch
-       rather than starting a new momentary press. effectiveHeld() is
-       their OR, and a latched button paints in its pressed state so the
-       latch stays visible. See
+       scan code - never route this through addPanelButton()). Both caps
+       are momentary, as on the hardware, and held state has two
+       independent sources: the mouse button down on the cap, and the
+       cap's keyboard key (Z / X) physically down. effectiveHeld() is
+       their OR, so holding Z and X together holds both caps, which a
+       single pointer cannot do. See
        Eps16PanelEditor::updatePatchSelectAnalog() for how the editor
        combines both buttons' effectiveHeld() into the one analog write.
        effectiveHeld() is also mirrored through the inherited
        getToggleState().
 
-       press()/release() carry the whole state transition; the mouse
+       press()/release() carry the whole mouse transition; the mouse
        handlers are thin wrappers over them. juce::Button's handlers are
        protected, so a test cannot drive this through them - it calls
        press()/release() instead, which is why the class is public. */
@@ -113,13 +112,15 @@ public:
     public:
         explicit PatchSelectButton(bool pointsRight);
         [[nodiscard]] bool effectiveHeld() const {
-            return latched || heldByMouse;
+            return heldByKey || heldByMouse;
         }
 
-        /* altDown toggles the latch; a plain press on a latched button
-           clears it; otherwise the press is momentary. */
-        void press(bool altDown);
+        void press();
         void release();
+
+        /* Driven by the editor's key handling, independently of the
+           mouse, so a key held across a mouse click stays held. */
+        void setKeyHeld(bool isDown);
 
         /* Two-frame sheet, same convention as PanelButton::setSprite():
            released on top, pressed below, frame height = sheet height / 2. */
@@ -137,7 +138,7 @@ public:
         void notifyChanged();
 
         juce::Image spriteSheet;
-        bool latched{};
+        bool heldByKey{};
         bool heldByMouse{};
     };
 
@@ -180,6 +181,13 @@ private:
                                 bool known = true);
     bool updateArrowKey(int keyCode, bool isDown);
     void releaseArrowKeys();
+    /* Returns true if keyCode is a Patch Select key, whether or not the
+       held state changed. */
+    bool pressPatchSelectKey(int keyCode);
+    /* Releases any Patch Select key no longer physically down. Never
+       presses: a press only ever comes from an unmodified key event, so
+       Cmd+Z stays the host's undo and cannot drive a cap. */
+    void refreshPatchSelectKeys();
     void openSaveDiskDialog(bool hfeFormat);
     void updateDiskName();
     void setKeyboardExpanded(bool expanded);
@@ -230,6 +238,7 @@ private:
     PanelButton *cancelButton{};
     PanelButton *enterButton{};
     std::array<bool, 4> arrowKeysDown{};
+    std::array<bool, 2> patchSelectKeysDown{};
     PatchSelectButton patchSelectLeft{false};
     PatchSelectButton patchSelectRight{true};
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(Eps16PanelEditor)
