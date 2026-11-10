@@ -74,3 +74,36 @@ jobs:
           name: Ensoniq-EPS-16-Plus-macOS-universal
           path: work/vst3-build/universal-plugin-package/Ensoniq-EPS-16-Plus-*-macOS-universal.zip
           if-no-files-found: error
+
+      # The Patch Select workflow test needs a ROM, a KPC ROM and an OS disk
+      # at runtime, so it cannot run here. Ship it as a universal binary with
+      # a double-clickable wrapper instead, to be run against the user's own
+      # EPS files.
+      - name: Package the Patch Select test tool
+        run: |
+          find_slice() {
+            find "$1" -type f -name eps16_patch_select_workflow_test \
+              -not -path '*/CMakeFiles/*' | head -1
+          }
+          ARM=$(find_slice work/vst3-build)
+          X86=$(find_slice work/vst3-build-high-sierra)
+          if [ -z "$ARM" ] || [ -z "$X86" ]; then
+            echo "missing slice: arm64='$ARM' x86_64='$X86'" >&2
+            exit 1
+          fi
+          mkdir -p work/patch-select-test
+          lipo -create "$ARM" "$X86" \
+            -output work/patch-select-test/eps16_patch_select_workflow_test
+          lipo -info work/patch-select-test/eps16_patch_select_workflow_test
+          cp tools/run-patch-select-test.command \
+             tools/patch-select-test-README.txt work/patch-select-test/
+          chmod +x work/patch-select-test/eps16_patch_select_workflow_test \
+                   work/patch-select-test/run-patch-select-test.command
+
+      - name: Upload the Patch Select test tool
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Ensoniq-EPS-16-Plus-patch-select-test
+          path: work/patch-select-test/*
+          if-no-files-found: error
