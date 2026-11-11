@@ -12,6 +12,17 @@ if(CMAKE_HOST_APPLE AND
 endif()
 project(eps16_emulator_foundation VERSION 1.1.1 LANGUAGES C CXX)
 
+# Fork versioning. PROJECT_VERSION stays purely numeric because it feeds the
+# VST3/AU binary version fields and JUCE derives JucePlugin_VersionCode from
+# it by parsing the dotted number - a "-R.nn" suffix there would not parse,
+# and hosts key their plug-in caches off those fields. The rack revision is
+# carried alongside it instead, and is what names archives, tags and anything
+# user-visible.
+set(EPS16_RACK_REVISION "01" CACHE STRING
+    "Rack-fork revision, appended as -R.<rev> to the upstream version")
+set(EPS16_VERSION_DISPLAY "${PROJECT_VERSION}-R.${EPS16_RACK_REVISION}")
+message(STATUS "EPS-16 Plus build version: ${EPS16_VERSION_DISPLAY}")
+
 option(EPS16_BUILD_VST3 "Build the EPS-16 Plus AU/VST3 plug-in" OFF)
 
 set(MUSASHI_DIR "${CMAKE_CURRENT_SOURCE_DIR}/work/deps/Musashi" CACHE PATH "Musashi source directory")

@@ -213,6 +213,9 @@ juce_add_plugin(Eps16Plus
   COPY_PLUGIN_AFTER_BUILD FALSE
 )
 
+target_compile_definitions(Eps16Plus PRIVATE
+  EPS16_VERSION_DISPLAY="${EPS16_VERSION_DISPLAY}")
+
 target_sources(Eps16Plus PRIVATE
   BandlimitedResampler.cpp
   BandlimitedResampler.h
@@ -256,7 +259,7 @@ if(WIN32)
     COMMAND "${CMAKE_COMMAND}"
             "-DSOURCE_BUNDLE=$<TARGET_GENEX_EVAL:Eps16Plus_VST3,$<TARGET_PROPERTY:Eps16Plus_VST3,JUCE_PLUGIN_ARTEFACT_FILE>>"
             "-DPACKAGE_DIR=${CMAKE_BINARY_DIR}/vst3-package"
-            "-DARCHIVE_NAME=Ensoniq-EPS-16-Plus-${PROJECT_VERSION}-Windows-x64.zip"
+            "-DARCHIVE_NAME=Ensoniq-EPS-16-Plus-${EPS16_VERSION_DISPLAY}-Windows-x64.zip"
             "-DRESOURCE_README=${CMAKE_CURRENT_SOURCE_DIR}/WindowsResourceFolder-README.txt"
             "-DTHIRD_PARTY_NOTICES=${CMAKE_SOURCE_DIR}/THIRD_PARTY_NOTICES.md"
             "-DJUCE_LICENSE=${EPS16_JUCE_DIR}/LICENSE.md"
@@ -311,7 +314,7 @@ if(EPS16_X86_64_VST3_BUNDLE AND EPS16_X86_64_AU_BUNDLE)
             "-DARM_AU_BUNDLE=$<TARGET_BUNDLE_DIR:Eps16Plus_AU>"
             "-DX86_AU_BUNDLE=${EPS16_X86_64_AU_BUNDLE}"
             "-DPACKAGE_DIR=${CMAKE_BINARY_DIR}/universal-plugin-package"
-            "-DARCHIVE_NAME=Ensoniq-EPS-16-Plus-${PROJECT_VERSION}-macOS-universal.zip"
+            "-DARCHIVE_NAME=Ensoniq-EPS-16-Plus-${EPS16_VERSION_DISPLAY}-macOS-universal.zip"
             "-DRESOURCE_README=${CMAKE_CURRENT_SOURCE_DIR}/ResourceFolder-README.txt"
             "-DINSTALLER=${CMAKE_CURRENT_SOURCE_DIR}/InstallUniversalMac.command"
             "-DTHIRD_PARTY_NOTICES=${CMAKE_SOURCE_DIR}/THIRD_PARTY_NOTICES.md"
