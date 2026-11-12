@@ -11,6 +11,14 @@ on:
 permissions:
   contents: read
 
+# One live run per branch.  Hosted macOS jobs sometimes sit in "queued"
+# without ever being acquired by a runner; without a group, a second push
+# just queues behind the stuck one.  With it, the newer push cancels the
+# older run, so re-pushing is enough to clear a stuck queue.
+concurrency:
+  group: macos-plugins-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-macos-plugins:
     runs-on: macos-15

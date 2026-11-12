@@ -9,6 +9,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: windows-vst3-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build-windows-vst3:
     runs-on: windows-2022
