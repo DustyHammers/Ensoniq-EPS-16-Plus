@@ -197,6 +197,17 @@ private:
     juce::Rectangle<int> designRect(const juce::String &name, int x, int y,
                                     int width, int height) const;
     void updatePatchSelectAnalog();
+    /* vfdDesign and scale are exactly what resized() just used for
+       vfd.setBounds(), so a repositioned VFD carries the halo with it
+       with nothing here to keep in sync by hand. */
+    void paintVfdHalo(juce::Graphics &, juce::Rectangle<float> vfdDesign,
+                      float scale) const;
+    /* Design-space band the halo can paint into (vfd expanded by the
+       bezel offset and the configured spread), or an empty rectangle if
+       vfdHalo's style is off. Shared by paint() and the timer's
+       scoped-repaint call so neither can drift from the other's idea of
+       the band. */
+    juce::Rectangle<float> vfdHaloBand(juce::Rectangle<float> vfdDesign) const;
 
     Eps16PlusProcessor &owner;
     VfdLabel vfd;
