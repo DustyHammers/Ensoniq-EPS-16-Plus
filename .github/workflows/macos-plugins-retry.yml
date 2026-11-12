@@ -1,0 +1,85 @@
+name: Retry macOS Plugins on runner starvation
+
+# "macOS Plugins" jobs intermittently sit in queued with zero steps and no
+# runner assigned, then get auto-cancelled by GitHub at ~15 minutes
+# (annotation: "The job was not acquired by Runner of type hosted even
+# after multiple attempts"). Confirmed upstream and label-agnostic: a
+# one-step echo job on macos-15 starves identically, macos-26 and
+# macos-latest starve too, and the same symptom is reported by unrelated
+# repos since 2026-11-02 (GitHub community discussions 211885, 212069).
+# Re-running from here, rather than requiring a human to notice and
+# re-push, is what "skin-111 is the default branch" (needed for
+# workflow_run to fire) buys us.
+on:
+  workflow_run:
+    workflows: ["macOS Plugins"]
+    types: [completed]
+
+permissions:
+  actions: write
+
+jobs:
+  retry-if-starved:
+    runs-on: ubuntu-24.04
+    if: github.event.workflow_run.conclusion == 'failure'
+    steps:
+      - name: Decide whether this was starvation, not a build failure
+        id: decide
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+          REPO: ${{ github.event.repository.name }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+          RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          CREATED_AT: ${{ github.event.workflow_run.created_at }}
+          UPDATED_AT: ${{ github.event.workflow_run.updated_at }}
+        run: |
+          set -euo pipefail
+
+          # Cap at 3 attempts total so a genuinely broken build can't loop.
+          if [ "$RUN_ATTEMPT" -ge 3 ]; then
+            echo "retry=false" >> "$GITHUB_OUTPUT"
+            echo "Already at attempt $RUN_ATTEMPT; not retrying again."
+            exit 0
+          fi
+
+          # A starved run sits queued for ~15 minutes before GitHub cancels
+          # it. A real build failure or a hand cancel completes much
+          # faster, so require at least 10 minutes between created and
+          # updated before treating this as starvation.
+          created_s=$(date -d "$CREATED_AT" +%s)
+          updated_s=$(date -d "$UPDATED_AT" +%s)
+          elapsed=$((updated_s - created_s))
+          if [ "$elapsed" -lt 600 ]; then
+            echo "retry=false" >> "$GITHUB_OUTPUT"
+            echo "Only ${elapsed}s from created to updated; too fast to be the acquisition timeout."
+            exit 0
+          fi
+
+          # The defining signature of non-acquisition is that no job in
+          # the run ever executed a single step.
+          jobs_json=$(gh api "repos/$OWNER/$REPO/actions/runs/$RUN_ID/jobs")
+          any_steps_ran=$(echo "$jobs_json" | jq '[.jobs[] | select((.steps | length) > 0)] | length > 0')
+          if [ "$any_steps_ran" = "true" ]; then
+            echo "retry=false" >> "$GITHUB_OUTPUT"
+            echo "At least one job ran steps; this is a real build failure, not starvation."
+            exit 0
+          fi
+
+          echo "retry=true" >> "$GITHUB_OUTPUT"
+
+      - name: Wait out the closed acquisition window
+        if: steps.decide.outputs.retry == 'true'
+        run: sleep 300
+
+      - name: Re-run the starved workflow run
+        if: steps.decide.outputs.retry == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+          REPO: ${{ github.event.repository.name }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        # The job's own conclusion is "cancelled", not "failed" (GitHub
+        # cancelled it, nothing in it failed), so rerun-failed-jobs would
+        # see nothing to rerun. Re-run the whole attempt instead.
+        run: gh api --method POST "repos/$OWNER/$REPO/actions/runs/$RUN_ID/rerun"
